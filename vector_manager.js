@@ -1356,7 +1356,8 @@
         /**
          * 🎨 显示向量化配置 UI（左侧书架 + 右侧详情）
          */
-        showUI() {
+        showUI(mode = 'books') {
+            mode = mode === 'api' ? 'api' : 'books';
             const config = this._getConfig();
             const UI = window.LeaseVectorMemory?.ui || { c: '#dfdcdcff', bc: '#ffffff', tc: '#000000ff', darkMode: false };
             const pop = window.LeaseVectorMemory?.pop;
@@ -1523,11 +1524,12 @@
                     }
                 </style>
 
-                <div class="g-p gg-vm-container">
+                ${window.LeaseVectorMemory?.vectorTabs?.(mode) || ''}
+                <div class="g-p gg-vm-container" data-mode="${mode}">
                     <!-- 左侧栏：API配置 + 书架列表 -->
                     <div class="gg-vm-left">
                         <!-- ✅ 总开关区域 -->
-                        <div style="background: rgba(76, 175, 80, 0.1); border-radius: 8px; padding: 12px; border: 2px solid rgba(76, 175, 80, 0.3); margin-bottom: 12px;">
+                        <div class="gg-vm-api-only" style="background: rgba(76, 175, 80, 0.1); border-radius: 8px; padding: 12px; border: 2px solid rgba(76, 175, 80,0.3); margin-bottom: 12px;">
                             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                                 <input type="checkbox" id="lvm_vm_global_enabled" ${window.LeaseVectorMemory?.config_obj?.vectorEnabled ? 'checked' : ''} style="transform: scale(1.3); cursor: pointer;" />
                                 <span style="font-size: 13px; font-weight: bold; color: ${UI.tc};">
@@ -1684,7 +1686,7 @@
 
                                 <!-- 第四排：清空 (独占一行，防止误触) -->
                                 <button id="lvm_vm_clear_all" style="grid-column: 1 / -1; width: 100%; padding: 10px; background: #f44336; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 500;">
-                                    🧹 清空所有书籍 (重置)
+                                    🧹 清空外部知识书
                                 </button>
                             </div>
                         </div>
@@ -1696,7 +1698,7 @@
                                     <i class="fa-solid fa-book"></i> 我的书架
                                 </div>
                                 <div style="font-size: 10px; color: ${UI.tc}; opacity: 0.7;">
-                                    ${Object.values(this.library).filter(book => !book.system && book.type !== 'cold_memory').length} 本书
+                                    ${Object.values(this.library).length} 本（含聊天记忆库与外部知识书）
                                 </div>
                             </div>
 
@@ -1719,7 +1721,7 @@
                 </div>
             `;
 
-            const $mainWindow = pop('💠 向量化设置', html, true);
+            const $mainWindow = pop(mode === 'api' ? '🔌 向量化 API 设置' : '📚 知识书管理', html, true);
             // 注释掉强制宽度设置，让 CSS 的 @media 适配自动生效，避免手机端左右有空隙
             // if ($mainWindow) {
             //     $mainWindow.attr('style', 'width: 90vw !important; height: 80vh !important; max-width: 1200px !important; max-height: 90vh !important; display: flex !important; flex-direction: column !important; pointer-events: auto !important;');
@@ -1727,7 +1729,17 @@
 
             // 绑定事件
             setTimeout(() => {
+                if (mode === 'api') {
+                    $('.gg-vm-global-section, .gg-vm-book-list-wrapper, .gg-vm-right').hide();
+                    $('.gg-vm-left').css({ maxWidth: '760px', width: '100%', margin: '0 auto' });
+                } else {
+                    $('.gg-vm-config-section, .gg-vm-api-only').hide();
+                    $('.gg-vm-left').css({ maxWidth: '420px' });
+                }
                 this._bindUIEvents();
+                $('#lvm-tab-memory').off('click').on('click', () => window.LeaseVectorMemory?.showVectorMemoryUI?.());
+                $('#lvm-tab-api').off('click').on('click', () => this.showUI('api'));
+                $('#lvm-tab-books').off('click').on('click', () => this.showUI('books'));
             }, 100);
         }
 
@@ -1736,19 +1748,27 @@
          * @private
          */
         _renderBookList(UI, activeBooks) {
-            const externalBooks = Object.entries(this.library).filter(([, book]) => !book.system && book.type !== 'cold_memory');
-            if (externalBooks.length === 0) {
+            const books = Object.entries(this.library).sort(([aId, a], [bId, b]) => {
+                const aCurrent = aId === window.LeaseVectorMemory?.getColdBookId?.();
+                const bCurrent = bId === window.LeaseVectorMemory?.getColdBookId?.();
+                if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
+                if (Boolean(a.system) !== Boolean(b.system)) return a.system ? -1 : 1;
+                return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
+            });
+            if (books.length === 0) {
                 return `
                     <div style="text-align: center; padding: 40px; color: ${UI.tc}; opacity: 0.5;">
                         <i class="fa-solid fa-inbox" style="font-size: 48px; margin-bottom: 10px;"></i>
-                        <div>书架为空</div>
-                        <div style="font-size: 11px; margin-top: 5px;">点击"📂 导入新书"开始</div>
+                        <div>当前没有知识书</div>
+                        <div style="font-size: 11px; margin-top: 5px;">表格行转冷后会自动出现当前聊天记忆库，也可导入外部 TXT</div>
                     </div>
                 `;
             }
 
-            return externalBooks.map(([bookId, book]) => {
+            return books.map(([bookId, book]) => {
                 const isActive = activeBooks.includes(bookId);
+                const isSystem = book.system || book.type === 'cold_memory';
+                const isCurrent = bookId === window.LeaseVectorMemory?.getColdBookId?.();
                 const isSelected = (bookId === this.selectedBookId); // ✅ 检查是否选中
                 const vectorizedCount = book.vectorized.filter(v => v).length;
                 const totalChunks = book.chunks.length;
@@ -1761,15 +1781,13 @@
                             <input type="checkbox" class="gg-book-checkbox" data-id="${bookId}" ${isActive ? 'checked' : ''} style="transform: scale(1.2); cursor: pointer;" />
                             <div style="flex: 1; min-width: 0;">
                                 <div class="gg-book-name" style="font-size: 12px; font-weight: 600; color: ${UI.tc}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${this._escapeHtml(book.name)}">
-                                    ${this._escapeHtml(book.name)}
+                                    ${isCurrent ? '🧠 当前聊天 · ' : (isSystem ? '🗂️ 其他聊天 · ' : '📘 外部 · ')}${this._escapeHtml(book.name)}
                                 </div>
                                 <div style="font-size: 10px; color: ${UI.tc}; opacity: 0.6; margin-top: 2px;">
                                     ${totalChunks} 片段 • ${progress}% 向量化
                                 </div>
                             </div>
-                            <button class="gg-book-delete" data-id="${bookId}" style="padding: 3px 8px; background: #f44336; color: white; border: none; border-radius: 3px; font-size: 10px; cursor: pointer;">
-                                🗑️
-                            </button>
+                            ${isSystem ? '<span style="font-size:10px;opacity:.65;">系统维护</span>' : `<button class="gg-book-delete" data-id="${bookId}" style="padding: 3px 8px; background: #f44336; color: white; border: none; border-radius: 3px; font-size: 10px; cursor: pointer;">🗑️</button>`}
                         </div>
                     </div>
                 `;
@@ -1791,6 +1809,7 @@
             }
 
             const book = this.library[this.selectedBookId];
+            const isSystemBook = book.system || book.type === 'cold_memory';
             const vectorizedCount = book.vectorized.filter(v => v).length;
             const totalChunks = book.chunks.length;
             const progress = totalChunks > 0 ? Math.round((vectorizedCount / totalChunks) * 100) : 0;
@@ -1801,7 +1820,7 @@
                     <div style="margin-bottom: 15px;">
                         <div style="font-size: 18px; font-weight: bold; color: ${UI.tc}; margin-bottom: 5px; display: flex; align-items: center; gap: 8px;">
                             <span>${this._escapeHtml(book.name)}</span>
-                            <i class="fa-solid fa-pen-to-square" id="lvm_vm_rename_book" style="font-size: 14px; cursor: pointer; opacity: 0.6; transition: opacity 0.2s;" title="重命名" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'"></i>
+                            ${isSystemBook ? '<span style="font-size:10px;opacity:.6;">由表格行自动维护</span>' : '<i class="fa-solid fa-pen-to-square" id="lvm_vm_rename_book" style="font-size:14px;cursor:pointer;opacity:.6" title="重命名"></i>'}
                         </div>
                         <div style="font-size: 11px; color: ${UI.tc}; opacity: 0.7;">
                             创建于: ${new Date(book.createTime).toLocaleString()} • ${totalChunks} 个片段
@@ -1821,9 +1840,7 @@
 
                     <!-- 操作按钮 -->
                     <div style="margin-bottom: 15px; display: flex; gap: 8px;">
-                        <button id="lvm_vm_edit_source" style="flex: 1; padding: 8px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 500;">
-                            ✏️ 编辑/追加源文本
-                        </button>
+                        ${isSystemBook ? '<button id="lvm_vm_open_current_memory" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:500;">🧠 回到当前聊天记忆管理</button>' : '<button id="lvm_vm_edit_source" style="flex:1;padding:8px;background:#2196F3;color:white;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:500;">✏️ 编辑/追加源文本</button>'}
                         <button id="lvm_vm_vectorize_book" style="flex: 1; padding: 8px; background: #FF9800; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 500;">
                             ⚡ 向量化此书
                         </button>
@@ -1850,7 +1867,7 @@
                 const preview = chunk.substring(0, 100) + (chunk.length > 100 ? '...' : '');
 
                 return `
-                    <div class="gg-chunk-item" data-index="${index}" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 8px; margin-bottom: 6px; background: rgba(255,255,255,0.02); cursor: pointer;">
+                    <div class="gg-chunk-item" data-index="${index}" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 8px; margin-bottom: 6px; background: rgba(255,255,255,0.02); cursor: ${book.system || book.type === 'cold_memory' ? 'default' : 'pointer'};">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                             <div style="font-size: 10px; color: ${UI.tc}; opacity: 0.7; font-weight: 600;">
                                 片段 ${index}
@@ -2192,6 +2209,13 @@
 
                 // 1. 同步到内存配置
                 C.vectorEnabled = isEnabled;
+
+                if (!isEnabled && typeof window.LeaseVectorMemory.restoreAllColdRows === 'function') {
+                    const restored = await window.LeaseVectorMemory.restoreAllColdRows();
+                    if (restored.restored > 0 && typeof toastr !== 'undefined') {
+                        toastr.info(`已将 ${restored.restored} 条冷记忆恢复为白色热行`, '已切回普通表格模式');
+                    }
+                }
 
                 // 2. 存入 localStorage
                 try {
@@ -2840,14 +2864,14 @@
             // 清空所有书籍
             $('#lvm_vm_clear_all').off('click').on('click', async () => {
                 const confirmed = await self._customConfirm(
-                    '⚠️ 危险操作：确定要清空整个图书馆吗？\n\n所有书籍、片段和向量数据都将永久删除！\n建议先导出备份。',
-                    '💥 核弹级清空'
+                    '确定清空全部外部知识书吗？\n\n当前及其他聊天的冷记忆库不会删除；外部书籍、片段和向量数据将永久删除。\n建议先导出备份。',
+                    '清空外部知识书'
                 );
 
                 if (confirmed) {
                     self.clearAllBooks();
                     self.showUI(); // Refresh UI
-                    if (typeof toastr !== 'undefined') toastr.success('图书馆已重置为空', '已清空');
+                    if (typeof toastr !== 'undefined') toastr.success('外部知识书已清空，聊天冷记忆库已保留', '已清空');
                 }
             });
 
@@ -2928,6 +2952,10 @@
         _bindDetailEvents() {
             const self = this;
             const customAlert = window.LeaseVectorMemory?.customAlert || alert;
+
+            $('#lvm_vm_open_current_memory').off('click').on('click', () => {
+                window.LeaseVectorMemory?.showVectorMemoryUI?.();
+            });
 
             // 重命名书籍
             $('#lvm_vm_rename_book').off('click').on('click', async () => {

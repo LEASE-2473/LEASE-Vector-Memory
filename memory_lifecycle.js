@@ -81,6 +81,7 @@
 
         const bookId = getColdBookId();
         const entries = collectColdEntries();
+        const existed = Boolean(vm.library[bookId]);
         const oldBook = vm.library[bookId] || {};
         const cache = Object.assign({}, oldBook.cache || {});
         (oldBook.entries || []).forEach((entry, index) => {
@@ -117,7 +118,8 @@
         vm.saveLibrary();
 
         const active = vm.getActiveBooks();
-        if (!active.includes(bookId)) vm.setActiveBooks([...active, bookId]);
+        // 首次建立当前聊天冷记忆书时默认启用；用户在“知识书管理”中关闭后尊重该选择。
+        if (!existed && !active.includes(bookId)) vm.setActiveBooks([...active, bookId]);
 
         if (autoVectorize && vectorized.includes(false)) {
             const result = await vm.vectorizeBook(bookId);
@@ -139,6 +141,8 @@
     async function setRowCold(tableIndex, rowId, cold) {
         const found = findRow(tableIndex, rowId);
         if (!found) return { success: false, error: `${rowId} 不存在` };
+        if (cold && !LVM.config_obj?.vectorEnabled) return { success: false, error: '向量功能已关闭；关闭时所有表格行都保持白色并直接注入' };
+        if (cold && found.meta.locked) return { success: false, error: `${rowId} 是锁定热行，请先取消锁定` };
 
         if (!cold) {
             found.meta.cold = false;
@@ -181,6 +185,7 @@
 
     async function reconcileColdRows() {
         const config = LVM.config_obj || {};
+        if (!config.vectorEnabled) return { success: true, changed: 0, failed: 0, skipped: '向量功能已关闭' };
         const changed = [];
         const tables = LVM.m?.all?.() || [];
         for (let tableIndex = 0; tableIndex < tables.length; tableIndex++) {
@@ -231,14 +236,47 @@
         }), 250);
     }
 
-    function coldRowsHtml() {
-        const rows = collectColdEntries();
-        if (!rows.length) return '<div style="padding:20px;text-align:center;opacity:.65;">暂无绿色冷记忆</div>';
-        return rows.map(entry => `
-            <div class="lvm-cold-card" data-entry="${entry.entryId}" style="padding:10px;border:1px solid rgba(127,127,127,.25);border-radius:7px;margin-bottom:8px;">
-                <div style="display:flex;gap:8px;align-items:center;"><strong>${LVM.esc(entry.tableName)} · ${entry.rowId}</strong><span style="font-size:10px;opacity:.6;">${LVM.esc(sourceText({ sources: entry.sources }))}</span><button class="lvm-restore-hot" data-ti="${entry.tableIndex}" data-id="${entry.rowId}" style="margin-left:auto;">恢复白色</button></div>
-                <div style="font-size:11px;white-space:pre-wrap;margin-top:6px;opacity:.85;">${LVM.esc(entry.text)}</div>
-            </div>`).join('');
+    async function restoreAllColdRows() {
+        let restored = 0;
+        (LVM.m?.all?.() || []).forEach(sheet => {
+            sheet.r.forEach(row => {
+                const meta = ensureMeta(sheet, row);
+                if (meta.cold) {
+                    meta.cold = false;
+                    restored++;
+                }
+            });
+        });
+        rebuildColdIndexCache();
+        await syncColdBook(false);
+        LVM.m?.save?.(false, true);
+        return { success: true, restored };
+    }
+
+    function currentRowsHtml() {
+        const cards = [];
+        (LVM.m?.all?.() || []).forEach((sheet, tableIndex) => {
+            sheet.r.forEach(row => {
+                const meta = ensureMeta(sheet, row);
+                const status = meta.locked ? 'locked' : (meta.cold ? 'cold' : 'hot');
+                const statusText = meta.locked ? '🔒 锁定热行' : (meta.cold ? '🟢 冷记忆' : '⚪ 热记忆');
+                const preview = serializeRow(tableIndex, sheet, row);
+                cards.push(`
+                    <div class="lvm-memory-card lvm-memory-${status}" data-status="${status}" data-search="${LVM.esc(`${sheet.n} ${meta.id} ${preview}`.toLowerCase())}">
+                        <div class="lvm-memory-card-head">
+                            <strong>${LVM.esc(sheet.n)} · ${meta.id}</strong>
+                            <span class="lvm-memory-status">${statusText}</span>
+                            <span class="lvm-memory-source">来源 ${LVM.esc(sourceText(meta))}</span>
+                        </div>
+                        <div class="lvm-memory-preview">${LVM.esc(preview)}</div>
+                        <div class="lvm-memory-actions">
+                            <button class="lvm-row-cold" data-ti="${tableIndex}" data-id="${meta.id}" data-cold="${meta.cold}" ${meta.locked ? 'disabled title="请先取消锁定"' : ''}>${meta.cold ? '恢复为白色热行' : '向量化并转为绿色冷行'}</button>
+                            <button class="lvm-row-lock" data-ti="${tableIndex}" data-id="${meta.id}" data-locked="${meta.locked}">${meta.locked ? '取消锁定' : '锁定为热行'}</button>
+                        </div>
+                    </div>`);
+            });
+        });
+        return cards.join('') || '<div class="lvm-memory-empty">当前聊天八张表均无数据。新增或导入表格行后，可在这里管理冷热与锁定。</div>';
     }
 
     function policyHtml() {
@@ -248,16 +286,25 @@
         }).join('');
     }
 
+    function vectorTabs(active) {
+        return `<div class="lvm-vector-tabs">
+            <button class="${active === 'memory' ? 'active' : ''}" id="lvm-tab-memory">🧠 当前聊天记忆库</button>
+            <button class="${active === 'api' ? 'active' : ''}" id="lvm-tab-api">🔌 API 设置</button>
+            <button class="${active === 'books' ? 'active' : ''}" id="lvm-tab-books">📚 知识书管理</button>
+        </div>`;
+    }
+
     function showVectorMemoryUI() {
         const html = `
-            <div style="display:flex;gap:8px;margin-bottom:10px;"><button id="lvm-tab-cold" style="flex:1;">🟢 冷记忆库</button><button id="lvm-tab-books" style="flex:1;">📚 外部知识书</button></div>
-            <div style="display:grid;grid-template-columns:minmax(220px,32%) 1fr;gap:12px;min-height:55vh;">
-                <div style="padding:10px;border:1px solid rgba(127,127,127,.25);border-radius:8px;overflow:auto;"><h4>逐表自动降冷</h4>${policyHtml()}<button id="lvm-apply-policies" style="width:100%;margin-top:8px;">立即按各表 X 整理</button><div style="font-size:10px;opacity:.65;margin-top:8px;">绿色只在向量成功后生效；锁定行不参与自动降冷。</div></div>
-                <div style="overflow:auto;"><div style="display:flex;gap:8px;margin-bottom:8px;"><input id="lvm-cold-search" placeholder="搜索表名、R编号或内容" style="flex:1;"><button id="lvm-retry-cold">重试同步</button></div><div id="lvm-cold-list">${coldRowsHtml()}</div></div>
+            ${vectorTabs('memory')}
+            <div class="lvm-current-memory-layout">
+                <div class="lvm-policy-panel"><h4>逐表自动降冷</h4>${policyHtml()}<button id="lvm-apply-policies" style="width:100%;margin-top:8px;">立即按各表 X 整理</button><div class="lvm-help-note">关闭某表的自动降冷后，该表白行继续按原记忆表格方式直接注入。绿色只在 Embedding 成功后生效；锁定行不参与自动降冷。</div></div>
+                <div class="lvm-current-memory-list"><div class="lvm-memory-toolbar"><input id="lvm-memory-search" placeholder="搜索表名、R 编号或内容"><select id="lvm-memory-filter"><option value="all">全部状态</option><option value="hot">⚪ 热记忆</option><option value="cold">🟢 冷记忆</option><option value="locked">🔒 锁定热行</option></select><button id="lvm-retry-cold">重试冷记忆向量</button></div><div id="lvm-memory-list">${currentRowsHtml()}</div></div>
             </div>`;
         LVM.pop('💠 向量记忆区', html, true);
 
-        $('#lvm-tab-books').off('click').on('click', () => LVM.VM?.showUI?.());
+        $('#lvm-tab-api').off('click').on('click', () => LVM.VM?.showUI?.('api'));
+        $('#lvm-tab-books').off('click').on('click', () => LVM.VM?.showUI?.('books'));
         $('#lvm-apply-policies').off('click').on('click', async () => {
             $('.lvm-policy-on').each(function () {
                 const ti = Number($(this).data('ti'));
@@ -275,14 +322,28 @@
             showVectorMemoryUI();
         });
         $('#lvm-retry-cold').off('click').on('click', async () => { await syncColdBook(true); showVectorMemoryUI(); });
-        $('.lvm-restore-hot').off('click').on('click', async function () {
-            await setRowCold(Number($(this).data('ti')), String($(this).data('id')), false);
+        $('.lvm-row-cold').off('click').on('click', async function () {
+            const cold = String($(this).data('cold')) === 'true';
+            const result = await setRowCold(Number($(this).data('ti')), String($(this).data('id')), !cold);
+            if (!result.success) await (LVM.customAlert || alert)(`转冷失败，行仍保持白色：${result.error}`, '向量化失败');
             showVectorMemoryUI();
         });
-        $('#lvm-cold-search').off('input').on('input', function () {
-            const query = String($(this).val() || '').toLowerCase();
-            $('.lvm-cold-card').each(function () { $(this).toggle(!query || $(this).text().toLowerCase().includes(query)); });
+        $('.lvm-row-lock').off('click').on('click', async function () {
+            const locked = String($(this).data('locked')) === 'true';
+            await setRowLocked(Number($(this).data('ti')), String($(this).data('id')), !locked);
+            showVectorMemoryUI();
         });
+        const applyFilter = () => {
+            const query = String($('#lvm-memory-search').val() || '').toLowerCase();
+            const status = String($('#lvm-memory-filter').val() || 'all');
+            $('.lvm-memory-card').each(function () {
+                const matchText = !query || String($(this).data('search') || '').includes(query);
+                const matchStatus = status === 'all' || String($(this).data('status')) === status;
+                $(this).toggle(matchText && matchStatus);
+            });
+        };
+        $('#lvm-memory-search').off('input').on('input', applyFilter);
+        $('#lvm-memory-filter').off('change').on('change', applyFilter);
     }
 
     Object.assign(LVM, {
@@ -293,7 +354,9 @@
         setRowLocked,
         reconcileColdRows,
         queueColdReconcile,
+        restoreAllColdRows,
         showVectorMemoryUI,
+        vectorTabs,
         getColdBookId
     });
 

@@ -1980,15 +1980,15 @@
     font-family: monospace;
 }
 
-/* ========== 纯悬浮操作列 (Pure Floating Actions) ========== */
+/* ========== v4 行状态与操作列：始终可见，避免冷热/锁定入口被隐藏 ========== */
 
 /* 1. The Cell: Invisible container */
 .g-tbl-wrap td.g-col-ops {
     position: sticky !important;
     right: 0 !important;
-    width: 30px !important;
-    min-width: 30px !important;
-    max-width: 30px !important;
+    width: 132px !important;
+    min-width: 132px !important;
+    max-width: 132px !important;
     z-index: 100 !important;
     padding: 0 !important;
     vertical-align: middle !important;
@@ -1998,21 +1998,23 @@
     border-bottom: none !important;
     border-top: none !important;
     border-left: none !important;
-    background: transparent !important;
+    background: var(--g-bc) !important;
     box-shadow: none !important;
 }
 
-/* 2. The Header: Completely Invisible (High Specificity Fix) */
+/* 状态列标题 */
 #gai-main-pop .g-tbl-wrap th.g-col-ops,
 th.g-col-ops {
-    background: transparent !important;
-    border: none !important;
+    background: var(--g-c) !important;
+    border-left: 1px solid rgba(127,127,127,.22) !important;
     box-shadow: none !important;
     outline: none !important;
-    width: 30px !important;
-    min-width: 30px !important;
-    padding: 0 !important;
-    pointer-events: none;
+    width: 132px !important;
+    min-width: 132px !important;
+    max-width: 132px !important;
+    padding: 5px !important;
+    pointer-events: auto;
+    font-size: 10px;
 }
 
 /* Ensure the sticky header shadow doesn't show under it */
@@ -2020,19 +2022,19 @@ th.g-col-ops {
     box-shadow: none !important;
 }
 
-/* 3. The Wrapper: Holds buttons, initially hidden */
+/* 状态按钮固定可见 */
 .g-ops-wrap {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     height: 100%;
     width: 100%;
 
-    /* Default: Hidden */
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
 
     /* ✨ CRITICAL: No background ever */
     background: transparent !important;
@@ -2048,10 +2050,12 @@ th.g-col-ops {
 
 /* 5. The Buttons: Pure Icons */
 .g-btn-op {
-    flex: 1;
-    width: 100% !important;
-    border: none !important;
-    background: transparent !important;
+    flex: 1 1 55px;
+    width: auto !important;
+    min-height: 28px;
+    border: 1px solid rgba(127,127,127,.24) !important;
+    border-radius: 4px;
+    background: rgba(127,127,127,.08) !important;
     /* No button background */
     color: var(--g-tc) !important;
     /* Matches text color */
@@ -2062,17 +2066,70 @@ th.g-col-ops {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 !important;
-    opacity: 0.6;
+    padding: 2px 4px !important;
+    opacity: .9;
     transition: opacity 0.2s, transform 0.2s;
 }
 
 .g-btn-op:hover {
     opacity: 1;
-    transform: scale(1.2);
+    transform: none;
     /* Slight zoom on hover */
     background: transparent !important;
     /* Still no background */
+}
+
+.g-btn-op:disabled { opacity: .35 !important; cursor: not-allowed !important; }
+.lvm-row-order { display:flex; width:100%; gap:4px; }
+.lvm-row-order .g-btn-op { min-height:22px; }
+
+.lvm-status-legend {
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px 14px;
+    padding:7px 9px;
+    font-size:10px;
+    opacity:.82;
+}
+
+.lvm-vector-tabs {
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    padding:10px 12px 0;
+}
+.lvm-vector-tabs button { min-height:38px; border:1px solid rgba(127,127,127,.3); border-radius:7px; }
+.lvm-vector-tabs button.active { border-color:#4caf50; background:rgba(76,175,80,.18); font-weight:700; }
+.lvm-current-memory-layout { display:grid; grid-template-columns:minmax(220px,32%) 1fr; gap:12px; min-height:55vh; padding:12px; box-sizing:border-box; }
+.lvm-policy-panel { padding:10px; border:1px solid rgba(127,127,127,.25); border-radius:8px; overflow:auto; }
+.lvm-help-note { font-size:10px; opacity:.68; margin-top:8px; line-height:1.45; }
+.lvm-current-memory-list { overflow:auto; min-width:0; }
+.lvm-memory-toolbar { display:grid; grid-template-columns:1fr auto auto; gap:8px; margin-bottom:8px; }
+.lvm-memory-toolbar input,.lvm-memory-toolbar select { min-width:0; padding:7px; }
+.lvm-memory-card { padding:10px; border:1px solid rgba(127,127,127,.25); border-radius:7px; margin-bottom:8px; border-left-width:5px; }
+.lvm-memory-hot { border-left-color:#ddd; }
+.lvm-memory-cold { border-left-color:#4caf50; background:rgba(76,175,80,.07); }
+.lvm-memory-locked { border-left-color:#ffb300; background:rgba(255,179,0,.07); }
+.lvm-memory-card-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.lvm-memory-status { font-size:11px; }
+.lvm-memory-source { font-size:10px; opacity:.62; margin-left:auto; }
+.lvm-memory-preview { font-size:11px; white-space:pre-wrap; margin-top:6px; opacity:.82; max-height:110px; overflow:auto; }
+.lvm-memory-actions { display:flex; gap:8px; margin-top:8px; }
+.lvm-memory-actions button { flex:1; min-height:32px; }
+.lvm-memory-empty { padding:32px 16px; text-align:center; opacity:.66; }
+.lvm-state-overlay { position:fixed; inset:0; z-index:10000030; background:rgba(0,0,0,.58); display:flex; align-items:center; justify-content:center; padding:16px; }
+.lvm-state-dialog { width:min(420px,92vw); background:var(--g-bc,#fff); color:var(--g-tc,#111); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:9px; box-shadow:0 12px 42px rgba(0,0,0,.45); }
+.lvm-state-dialog h3,.lvm-state-dialog p { margin:0; }
+.lvm-state-dialog p { font-size:11px; opacity:.72; }
+.lvm-state-dialog button { min-height:38px; }
+.lvm-state-cancel { opacity:.72; }
+
+@media (max-width: 768px) {
+    .lvm-vector-tabs { grid-template-columns:1fr; }
+    .lvm-current-memory-layout { grid-template-columns:1fr; }
+    .lvm-memory-toolbar { grid-template-columns:1fr; }
+    .g-tbl-wrap td.g-col-ops,#gai-main-pop .g-tbl-wrap th.g-col-ops,th.g-col-ops { width:104px !important; min-width:104px !important; max-width:104px !important; }
+    .g-btn-op { flex-basis:44px; font-size:10px !important; }
 }
 
 /* ========== 📱 手机端表格选择按钮修复 (Nuclear Fix) ========== */

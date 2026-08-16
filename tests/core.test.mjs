@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 const lifecycleSource = fs.readFileSync(new URL('../memory_lifecycle.js', import.meta.url), 'utf8');
+const vectorSource = fs.readFileSync(new URL('../vector_manager.js', import.meta.url), 'utf8');
 
 function extractBlock(source, marker) {
   const start = source.indexOf(marker);
@@ -100,7 +101,7 @@ function lifecycleHarness({ failEmbedding = false } = {}) {
   const library = {};
   const LVM = {
     m: { all: () => sheets, get: i => sheets[i], gid: () => 'chat-A', save() {} },
-    config_obj: { coldPolicies: Object.fromEntries(sheets.map((_, i) => [i, { enabled: i < 2, keep: 3 }])) },
+    config_obj: { vectorEnabled: true, coldPolicies: Object.fromEntries(sheets.map((_, i) => [i, { enabled: i < 2, keep: 3 }])) },
     esc: String,
     VM: {
       isDataLoaded: true,
@@ -137,10 +138,29 @@ test('Embedding 失败的候选行保持白色', async () => {
   assert.equal(sheets[0].r.some(row => row.__lvm.cold), false);
 });
 
+test('向量总开关关闭时自动降冷跳过且所有行保持白色', async () => {
+  const { LVM, sheets } = lifecycleHarness();
+  LVM.config_obj.vectorEnabled = false;
+  const result = await LVM.reconcileColdRows();
+  assert.equal(result.skipped, '向量功能已关闭');
+  assert.equal(sheets[0].r.some(row => row.__lvm.cold), false);
+});
+
 test('身份、存储和数据库命名空间完全隔离', () => {
   const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   const allSource = fs.readdirSync(new URL('..', import.meta.url)).filter(name => name.endsWith('.js')).map(name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8')).join('\n');
   assert.equal(manifest.id, 'lease_vector_memory');
   assert.match(allSource, /LEASE_Vector_Memory_Database/);
   assert.doesNotMatch(allSource, /extension_settings\.st_memory_table|chatMetadata\.gaigai|Memory_Vector_Database/);
+});
+
+test('向量记忆 UI 暴露三个分区和主表显隐锁定入口', () => {
+  const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+  assert.match(lifecycleSource, /当前聊天记忆库/);
+  assert.match(lifecycleSource, /API 设置/);
+  assert.match(lifecycleSource, /知识书管理/);
+  assert.match(indexSource, /id="gai-btn-memory-state"/);
+  assert.match(indexSource, /状态 \/ 操作/);
+  assert.match(css, /\.g-ops-wrap[\s\S]*?opacity:\s*1\s*!important/);
+  assert.match(vectorSource, /const books = Object\.entries\(this\.library\)/);
 });

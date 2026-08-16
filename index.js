@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.0.0
+// LEASE Vector Memory v4.1.0
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.0.0 启动');
+    console.log('🚀 LEASE Vector Memory v4.1.0 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.0.0';
+    const V = 'v4.1.0';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -4583,9 +4583,11 @@
             <button id="gai-btn-view" title="视图设置"><i class="fa-solid fa-ruler-combined"></i> 视图</button>
             <button id="gai-btn-theme" title="设置外观"><i class="fa-solid fa-palette"></i> 主题</button>
             <button id="gai-btn-back" title="追溯历史剧情并补填记忆表格"><i class="fa-solid fa-bolt"></i> 追溯</button>
+            <button id="gai-btn-memory-state" title="批量切换白色热行、绿色冷行与锁定热行"><i class="fa-solid fa-eye"></i> 显隐/锁定</button>
             <button id="gai-btn-vector-memory" title="冷记忆库与外部知识书"><i class="fa-solid fa-database"></i> 向量记忆区</button>
             <button id="gai-btn-config" title="插件设置"><i class="fa-solid fa-gear"></i> 配置</button>
-         </div>
+            </div>
+            <div class="lvm-status-legend"><span>⚪ 白色热行：直接注入</span><span>🟢 绿色冷行：向量召回</span><span>🔒 锁定热行：注入但不给填表 AI</span></div>
         </div>
     `;
 
@@ -4833,7 +4835,7 @@
 
         // ✅ Only show Ops Column Header if there is data
         if (hasData) {
-            h += '<th class="g-col-ops"></th>';
+            h += '<th class="g-col-ops">状态 / 操作</th>';
         }
 
         h += '</tr></thead><tbody>'
@@ -4908,10 +4910,9 @@
                 // ✅ 新增：隐形操作列
                 h += `<td class="g-col-ops">
                 <div class="g-ops-wrap">
-                    <button class="g-btn-op lvm-temp-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.cold ? '恢复为热记忆' : '向量化并转冷'}">${rowMeta.cold ? '🟢' : '⚪'}</button>
-                    <button class="g-btn-op lvm-lock-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.locked ? '取消锁定' : '锁定：不发送给填表AI'}">${rowMeta.locked ? '🔒' : '🔓'}</button>
-                    <button class="g-btn-op up" data-ti="${ti}" data-r="${ri}">↑</button>
-                    <button class="g-btn-op down" data-ti="${ti}" data-r="${ri}">↓</button>
+                    <button class="g-btn-op lvm-temp-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.locked ? '锁定热行不能转冷' : (rowMeta.cold ? '恢复为热记忆' : '向量化并转冷')}" ${rowMeta.locked ? 'disabled' : ''}>${rowMeta.cold ? '🟢 转热' : '⚪ 转冷'}</button>
+                    <button class="g-btn-op lvm-lock-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.locked ? '取消锁定' : '锁定：不发送给填表AI'}">${rowMeta.locked ? '🔒 解锁' : '🔓 锁定'}</button>
+                    <span class="lvm-row-order"><button class="g-btn-op up" data-ti="${ti}" data-r="${ri}" title="上移">↑</button><button class="g-btn-op down" data-ti="${ti}" data-r="${ri}" title="下移">↓</button></span>
                 </div>
             </td>`;
 
@@ -5948,6 +5949,58 @@
             } else {
                 customAlert('向量记忆模块未加载，请刷新页面重试', '错误');
             }
+        });
+
+        $('#gai-btn-memory-state').off('click').on('click', async () => {
+            const ti = selectedTableIndex !== null ? selectedTableIndex : Number($('.g-t.act').data('i'));
+            const sheet = m.get(ti);
+            const indices = selectedRows.length > 0
+                ? [...new Set(selectedRows)]
+                : (selectedRow !== null ? [selectedRow] : []);
+            if (!sheet || indices.length === 0) {
+                await customAlert('请先勾选一行或多行，再使用“显隐/锁定”。\n\n每行右侧也固定显示“转冷/转热”和“锁定/解锁”按钮。', '请选择记忆行');
+                return;
+            }
+
+            const targets = indices.map(index => sheet.r[index]).filter(Boolean).map(row => sheet._ensureMeta(row).__lvm.id);
+            const overlayId = `lvm-state-actions-${Date.now()}`;
+            const html = `<div id="${overlayId}" class="lvm-state-overlay"><div class="lvm-state-dialog">
+                <h3>显隐 / 锁定 · ${esc(sheet.n)}</h3>
+                <p>已选择 ${targets.length} 行：${targets.map(esc).join('、')}</p>
+                <button data-action="cold">🟢 向量化成功后转为冷行（隐藏直注）</button>
+                <button data-action="hot">⚪ 恢复为白色热行（直接注入）</button>
+                <button data-action="lock">🔒 锁定为热行（不交给填表 AI）</button>
+                <button data-action="unlock">🔓 取消锁定</button>
+                <button data-action="cancel" class="lvm-state-cancel">取消</button>
+            </div></div>`;
+            $('body').append(html);
+            $(`#${overlayId} button`).off('click').on('click', async function () {
+                const action = String($(this).data('action'));
+                if (action === 'cancel') {
+                    $(`#${overlayId}`).remove();
+                    return;
+                }
+                $(`#${overlayId} button`).prop('disabled', true);
+                let success = 0;
+                const failures = [];
+                for (const rowId of targets) {
+                    let result;
+                    if (action === 'cold' || action === 'hot') {
+                        result = await window.LeaseVectorMemory.setRowCold?.(ti, rowId, action === 'cold');
+                    } else {
+                        result = await window.LeaseVectorMemory.setRowLocked?.(ti, rowId, action === 'lock');
+                    }
+                    if (result?.success) success++;
+                    else failures.push(`${rowId}: ${result?.error || '操作失败'}`);
+                }
+                $(`#${overlayId}`).remove();
+                refreshTable(ti);
+                if (failures.length) {
+                    await customAlert(`成功 ${success} 行，失败 ${failures.length} 行：\n${failures.join('\n')}`, '部分操作未完成');
+                } else if (typeof toastr !== 'undefined') {
+                    toastr.success(`已处理 ${success} 行`, '记忆状态已更新');
+                }
+            });
         });
 
         $('#gai-btn-export').off('click').on('click', function () {
@@ -10248,8 +10301,8 @@
                 <div class="gg-config-card-header"><div class="gg-config-card-title">💠 行级向量记忆</div></div>
                 <div class="gg-config-card-body">
                     <label class="gg-cfg-option"><input type="checkbox" id="lvm_c_vector_enabled" ${C.vectorEnabled ? 'checked' : ''}><span>🔍 启用冷记忆与外部知识书检索</span></label>
-                    <div class="gg-cfg-hint">白色热行直接注入；绿色冷行仅在日常剧情请求中语义召回，批量填表绝不召回。</div>
-                    <button type="button" id="lvm_open_vector_memory_settings" style="width:100%;padding:8px;margin-top:8px;">打开向量记忆区与逐表 X 设置</button>
+                    <div class="gg-cfg-hint">关闭时保持原版表格行为：所有行均为白色并直接注入。开启后，只有成功向量化的绿色冷行改为语义召回；批量填表绝不读取冷行。</div>
+                    <button type="button" id="lvm_open_vector_memory_settings" style="width:100%;padding:8px;margin-top:8px;">打开当前记忆库 / API / 知识书管理</button>
                 </div>
             </div>
         </div>
@@ -10260,7 +10313,7 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                 <button id="lvm_open_api" style="padding: 10px 0; font-size:11px; background: rgba(0,0,0,0.05); color: ${UI.tc}; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; cursor: pointer;">🤖 API配置</button>
                 <button id="lvm_open_pmt" style="padding: 10px 0; font-size:11px; background: rgba(0,0,0,0.05); color: ${UI.tc}; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; cursor: pointer;">📝 提示词</button>
-                <button id="lvm_open_vector" style="padding: 10px 0; font-size:11px; background: rgba(0,0,0,0.05); color: ${UI.tc}; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; cursor: pointer;">💠 向量化</button>
+                <button id="lvm_open_vector" style="padding: 10px 0; font-size:11px; background: rgba(0,0,0,0.05); color: ${UI.tc}; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; cursor: pointer;">💠 向量记忆</button>
             </div>
 
             <!-- 2. Main Action -->
@@ -10685,6 +10738,12 @@
             $('#lvm_c_vector_enabled').on('change', async function () {
                 // 1. 同步到内存配置
                 C.vectorEnabled = $(this).is(':checked');
+                if (!C.vectorEnabled && typeof window.LeaseVectorMemory.restoreAllColdRows === 'function') {
+                    const result = await window.LeaseVectorMemory.restoreAllColdRows();
+                    if (result.restored > 0 && typeof toastr !== 'undefined') {
+                        toastr.info(`已将 ${result.restored} 条冷记忆恢复为白色热行`, '已切回普通表格模式');
+                    }
+                }
 
                 // 2. 存入 localStorage
                 try {
