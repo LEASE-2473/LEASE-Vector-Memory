@@ -371,6 +371,26 @@ test('向量记忆 UI 合并冷热与 API，并精简主表操作', () => {
   assert.doesNotMatch(indexSource, /<h4>🤖 AI 总结配置<\/h4>/);
 });
 
+test('运行源码不再包含不可达的旧总结界面与永久关闭分支', () => {
+  const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+  const removedRuntimeMarkers = [
+    'if (false)',
+    'renderBookUI',
+    '_lvm_openTableSelector',
+    'lvm_c_auto_sum',
+    'getVectorSummaryTakeoverStatus',
+    'gai-summary-pop',
+    'g-book-view',
+    'lvm_sum_open_table_selector',
+    'gg-sum-table-selector-overlay'
+  ];
+  for (const marker of removedRuntimeMarkers) {
+    assert.doesNotMatch(indexSource + '\n' + css, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(indexSource, /REMOVED_LEGACY_CONFIG_KEYS[\s\S]*?'autoSummary'[\s\S]*?'autoVectorizeSummary'/);
+  assert.match(indexSource, /delete API_CONFIG\.summarySource;[\s\S]*?delete API_CONFIG\.lastSummaryIndex;/);
+});
+
 test('来源区间固定列具有明确裁剪宽度和不透明主题背景', () => {
   const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
   assert.match(css, /\.g-col-source\s*\{[\s\S]*?clip-path:\s*inset\(0\)\s*!important/);
@@ -408,27 +428,35 @@ test('清表入口不依赖已删除的总结管理器并同步冷记忆索引',
   assert.doesNotMatch(cleanup, /slice\(0, -1\)\.forEach\(s => s\.clear\(\)\);\s*clearSummarizedMarks\(\)/);
 });
 
-test('追溯请求按完整事件弧聚合且不使用代码封存', () => {
+test('默认追溯提示词使用实测向量分块版且兼容旧自定义方案', () => {
   const baselineMatch = promptSource.match(/const LEASE_BACKFILL_PROMPT_BASELINE = decodeBuiltinPrompt\(\[(.*?)\]\.join\(''\)\);/s);
   assert.ok(baselineMatch);
   const baselineChunks = vm.runInNewContext('[' + baselineMatch[1] + ']');
   const baselinePrompt = Buffer.from(baselineChunks.join(''), 'base64').toString('utf8').trim();
-  assert.equal(createHash('sha256').update(baselinePrompt).digest('hex'), 'cf6505f811785cb037ce260e7ead26b59c30fb0d4c76d7569def0db9044c0d7d');
-  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.6/);
+  assert.equal(createHash('sha256').update(baselinePrompt).digest('hex'), '6009ac3eb9b89f4cb14f4f51399e79a194866ca027696933be7857da81b50f31');
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.9/);
   assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt\(LEASE_BACKFILL_PROMPT_BASELINE\)/);
-  assert.match(promptSource, /用户长期实测的“新版-backfillPrompt\.txt”是唯一正文基线/);
+  assert.match(promptSource, /用户实测并复审的“LEASE vectorprompt\.md”是默认追溯提示词正文/);
+  assert.match(baselinePrompt, /历史记录填表指南（向量化精细记忆版 v2）/);
   assert.match(baselinePrompt, /从待处理消息的第一条读到最后一条/);
   assert.match(baselinePrompt, /统一剧情时间轴/);
-  assert.match(baselinePrompt, /一名角色只能有一行/);
-  assert.match(promptSource, /表7 手工记忆/);
-  assert.match(promptSource, /R0 和数字数组下标都不是合法行号/);
+  assert.match(baselinePrompt, /去重判断严格以【当前表格状态】为准/);
+  assert.match(baselinePrompt, /前情提要只用于辅助理解，不作为跳过记录的依据/);
+  assert.match(baselinePrompt, /同一连续事件（或连续微转场行动链）正在进行中且未完结/);
+  assert.match(baselinePrompt, /连贯微转场容许/);
+  assert.match(baselinePrompt, /连续跨零点容许/);
+  assert.match(baselinePrompt, /约 250~450 字（硬上限约 800 字）/);
+  assert.match(baselinePrompt, /按自然阶段（如：谈判阶段 -> 筹划阶段 -> 执行收尾）拆为多个 R 行/);
+  assert.match(baselinePrompt, /脱离世界书也能完全看懂发生了什么/);
+  assert.match(baselinePrompt, /约定填写当天 `23:59` 作为标准完结时间戳/);
+  assert.match(baselinePrompt, /支线名保持稳定，但按独立行动与阶段里程碑[\s\S]*?新建行/);
+  assert.match(baselinePrompt, /表7 手工记忆/);
+  assert.match(baselinePrompt, /严禁使用 R0 或数字下标/);
   assert.doesNotMatch(promptSource, /Next Stable Row ID:/);
-  assert.match(promptSource, /【主线事件聚合与分行协议·最高优先级】/);
-  assert.match(promptSource, /结束时间.*不是不可修改的封印/);
-  assert.match(promptSource, /短距离移动、房间切换、途中交谈/);
-  assert.match(promptSource, /不得因为“同一天”或“人物相同”就把彼此无关的多个事件无限塞入同一行/);
+  assert.match(promptSource, /【主线事件向量分块补充协议·最高优先级·v7\.9】/);
   assert.match(backfillSource, /MAIN_PLOT_COHERENCE_RULE/);
-  assert.match(backfillSource, /短距离移动、房间切换、途中交谈/);
+  assert.match(backfillSource, /历史记录填表指南（向量化精细记忆版 v2）/);
+  assert.match(backfillSource, /连续微转场和无中断跨零点不拆行/);
   assert.doesNotMatch(indexSource, /已有结束时间，主线事件已封存|发生地点切换.*必须另起一行|closedMainRows/);
 
   const promptStore = new Map();
@@ -448,10 +476,12 @@ test('追溯请求按完整事件弧聚合且不使用代码封存', () => {
     console: { log() {}, warn() {}, error() {} }
   });
   const runtimePrompt = promptWindow.LeaseVectorMemory.PromptManager.DEFAULT_BACKFILL_PROMPT;
+  assert.equal(runtimePrompt, baselinePrompt);
   assert.match(runtimePrompt, /从待处理消息的第一条读到最后一条/);
   assert.match(runtimePrompt, /【统一剧情时间轴】/);
   assert.match(runtimePrompt, /表7 手工记忆/);
   assert.doesNotMatch(runtimePrompt, /表7 记忆总结/);
+  assert.doesNotMatch(runtimePrompt, /【主线事件向量分块补充协议·最高优先级·v7\.9】/);
   assert.doesNotMatch(runtimePrompt, /(?:updateRow|deleteRow)\(\d+,\s*\d+/);
 });
 
