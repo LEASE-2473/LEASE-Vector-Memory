@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.3
+// LEASE Vector Memory v4.2.4
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.3 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.4 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.3';
+    const V = 'v4.2.4';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -3040,6 +3040,17 @@
         // ✅ Strict Sequential Execution: Respects AI's intended order
         // If AI outputs "insertRow → updateRow", it means "insert THEN update the new row"
         // If AI outputs "updateRow → insertRow", it means "update old row THEN insert new row"
+
+        // 空表初始化兼容：旧模型偶尔把“第一条”误写成 updateRow(..., "R0", ...)。
+        // 仅当目标表在事务开始时确实为空时安全转成 insert；其他非法 R 编号仍严格拒绝。
+        cs.forEach(cm => {
+            const sh = m.get(cm.ti);
+            if (cm.t === 'update' && sh && sh.r.length === 0 && /^(?:R?0)$/i.test(String(cm.ri || ''))) {
+                console.warn(`⚠️ [空表初始化兼容] 表${cm.ti} ${cm.ri} updateRow 已转换为 insertRow`);
+                cm.t = 'insert';
+                cm.ri = null;
+            }
+        });
 
         const conflicts = [];
         // 主线已填写结束时间的行视为封存。按命令顺序追踪本批新封存的行，

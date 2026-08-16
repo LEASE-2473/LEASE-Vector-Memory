@@ -159,6 +159,24 @@ test('追加列忽略重复片段并吸收模型回传的完整新版', () => {
   assert.equal(sheet.r[0][2], '[礼宾室]谈判开始；[礼宾室]双方交换条件');
 });
 
+test('空表初始化时将旧式 R0 更新安全转换为新增', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色状态', ['#角色名', '#状态']);
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R0', d: { 0: '洛川', 1: '正常' } }]);
+  assert.equal(result.success, true);
+  assert.equal(sheet.r.length, 1);
+  assert.equal(sheet.r[0].__lvm.id, 'R1');
+  assert.equal(sheet.r[0][0], '洛川');
+  assert.equal(saves, 1);
+});
+
 function lifecycleHarness({ failEmbedding = false } = {}) {
   const { Sheet } = loadSheetClass();
   const sheets = [new Sheet('主线剧情', ['事件']), new Sheet('支线剧情', ['事件']), ...Array.from({ length: 5 }, (_, i) => new Sheet(`表${i + 2}`, ['内容'])), new Sheet('手工记忆', ['#标题', '内容', '#标签'])];
@@ -278,7 +296,10 @@ test('清表入口不依赖已删除的总结管理器并同步冷记忆索引',
 });
 
 test('追溯请求强制按事件分行并废止同日追加旧规则', () => {
-  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.3/);
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.4/);
+  assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = `你是 LEASE Vector Memory/);
+  assert.match(promptSource, /R0 永远不存在/);
+  assert.match(promptSource, /旧 Base64 正文仅保留用于历史审计，禁止再作为运行时默认值/);
   assert.match(promptSource, /【主线事件分行协议·最高优先级】/);
   assert.match(promptSource, /任何第1列“结束时间”非空的主线行都已经封存/);
   assert.match(promptSource, /“同一天必须 updateRow”.*旧规则全部作废/);
@@ -297,7 +318,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.3' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.4' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console
