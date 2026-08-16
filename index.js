@@ -6230,7 +6230,7 @@
 
             // 5. 选项2：清空所有详细表（保留总结和进度）
             const $btnOption2 = $('<button>', {
-                html: '<span style="font-size:13px;">📋 <strong>清空所有详细表 (保留总结)</strong></span><br><span style="font-size:10px; opacity:0.8;">清空所有 ' + tableCount + ' 个详细表格，保留总结表和追溯进度指针</span>',
+                html: '<span style="font-size:13px;">📋 <strong>清空七张详情表（保留手工记忆）</strong></span><br><span style="font-size:10px; opacity:0.8;">保留手工记忆和批量填表进度指针</span>',
                 css: {
                     padding: '6px', border: '1px solid #66bb6a', borderRadius: '6px',
                     background: 'transparent', color: UI.tc, cursor: 'pointer', textAlign: 'left',
@@ -6240,7 +6240,7 @@
                 function () { $(this).css({ borderColor: '#4caf50', background: 'rgba(102, 187, 106, 0.1)', transform: 'translateY(-2px)' }); },
                 function () { $(this).css({ borderColor: '#66bb6a', background: 'transparent', transform: 'translateY(0)' }); }
             ).click(async function () {
-                const confirmMsg = `确定清空所有 ${tableCount} 个详细表格吗？\n\n✅ 记忆总结将会保留\n✅ 所有进度指针保留\n\n⚠️ 此操作不可恢复！`;
+                const confirmMsg = `确定清空所有 ${tableCount} 个详情表格吗？\n\n✅ 手工记忆将会保留\n✅ 批量填表进度保留\n\n⚠️ 此操作不可恢复！`;
                 if (!await customConfirm(confirmMsg, '确认清空')) return;
 
                 // 清空所有详细表（填表指针不归零+保留总结表）
@@ -6260,14 +6260,14 @@
                 $overlay.remove();
                 shw();
 
-                const msg = `✅ 已清空所有详细表格，总结和进度已保留`;
+                const msg = `✅ 已清空七张详情表，手工记忆和进度已保留`;
                 if (typeof toastr !== 'undefined') toastr.success(msg);
                 else await customAlert(msg, '完成');
             });
 
             // 6. 选项3：清空所有详细表（填表内容+指针进度）
             const $btnOption3 = $('<button>', {
-                html: '<span style="font-size:13px;">🔄 <strong>重置所有详细表 (清空+归零)</strong></span><br><span style="font-size:10px; opacity:0.8;">清空所有 ' + tableCount + ' 个详细表格，保留总结表，重置填表进度指针为 0</span>',
+                html: '<span style="font-size:13px;">🔄 <strong>重置七张详情表（清空＋归零）</strong></span><br><span style="font-size:10px; opacity:0.8;">保留手工记忆，重置批量填表进度为 0</span>',
                 css: {
                     padding: '6px', border: '1px solid #ffa726', borderRadius: '6px',
                     background: 'transparent', color: UI.tc, cursor: 'pointer', textAlign: 'left',
@@ -6277,7 +6277,7 @@
                 function () { $(this).css({ borderColor: '#ff9800', background: 'rgba(255, 167, 38, 0.1)', transform: 'translateY(-2px)' }); },
                 function () { $(this).css({ borderColor: '#ffa726', background: 'transparent', transform: 'translateY(0)' }); }
             ).click(async function () {
-                const confirmMsg = `确定重置所有 ${tableCount} 个详细表格吗？\n\n将执行：\n✓ 清空所有详细表格数据\n✓ 保留记忆总结\n✓ 重置填表进度指针为 0\n\n⚠️ 此操作不可恢复！`;
+                const confirmMsg = `确定重置所有 ${tableCount} 个详情表格吗？\n\n将执行：\n✓ 清空七张详情表\n✓ 保留手工记忆\n✓ 重置批量填表进度为 0\n\n⚠️ 此操作不可恢复！`;
                 if (!await customConfirm(confirmMsg, '确认重置')) return;
 
                 // 清空所有详细表（除总结表）
@@ -6306,14 +6306,14 @@
                 $overlay.remove();
                 shw();
 
-                const msg = `✅ 已重置所有详细表格，总结已保留，填表进度指针已归零`;
+                const msg = `✅ 已重置七张详情表，手工记忆已保留，填表进度已归零`;
                 if (typeof toastr !== 'undefined') toastr.success(msg);
                 else await customAlert(msg, '完成');
             });
 
             // 7. 选项4：删除所有数据（全清）
             const $btnOption4 = $('<button>', {
-                html: '<span style="font-size:13px;">💥 <strong>删除所有数据 (全清)</strong></span><br><span style="font-size:10px; opacity:0.8;">清空所有表格（包括总结表）并重置所有指针</span>',
+                html: '<span style="font-size:13px;">💥 <strong>删除所有数据（全清）</strong></span><br><span style="font-size:10px; opacity:0.8;">清空八张表（包括手工记忆）并重置进度</span>',
                 css: {
                     padding: '6px', border: '1px solid #e53935', borderRadius: '6px',
                     background: 'transparent', color: UI.tc, cursor: 'pointer', textAlign: 'left',
@@ -6327,7 +6327,7 @@
 
                 if (hasSummary) {
                     confirmMsg += '🗑️ 将删除所有详细表格\n';
-                    confirmMsg += '🗑️ 将删除记忆总结\n';
+                    confirmMsg += '🗑️ 将删除手工记忆\n';
                     confirmMsg += '🗑️ 将重置所有标记\n\n';
                 } else {
                     confirmMsg += '🗑️ 将删除所有表格数据\n\n';
@@ -6376,7 +6376,7 @@
                 $overlay.remove();
                 shw();
 
-                await customAlert('✅ 所有数据已清空（包括总结）', '完成');
+                await customAlert('✅ 所有数据已清空（包括手工记忆）', '完成');
             });
 
             // 7. 取消按钮
@@ -10651,10 +10651,10 @@
                     html: `
                         <div style="margin-bottom:12px;font-weight:600;color:${accentColor};">🌟 变量模式：</div>
                         <div style="margin-bottom:12px;">如需调整记忆内容在上下文中的位置，可在预设条目中使用对应变量：</div>
-                        <div style="margin-bottom:8px;">• 全部内容（表格＋总结）：<code style="${codeStyle}">{{MEMORY}}</code>（表格部分跟随本开关）</div>
-                        <div style="margin-bottom:8px;">• 表格插入变量（不含总结表）：<code style="${codeStyle}">{{MEMORY_TABLE}}</code>（强制发送未归档表格）</div>
+                        <div style="margin-bottom:8px;">• 全部热记忆：<code style="${codeStyle}">{{MEMORY}}</code>（跟随本开关）</div>
+                        <div style="margin-bottom:8px;">• 热表格变量：<code style="${codeStyle}">{{MEMORY_TABLE}}</code>（显式强制注入）</div>
                         <div style="margin-bottom:8px;">• 单表插入变量：<code style="${codeStyle}">{{MEMORY_TABLE_xxx}}</code>（xxx 为表格名）</div>
-                        <div>• 总结插入变量：<code style="${codeStyle}">{{MEMORY_SUMMARY}}</code></div>
+                        <div>• 冷记忆变量：<code style="${codeStyle}">{{VECTOR_MEMORY}}</code>（仅日常剧情语义召回）</div>
                     `
                 });
                 const $closeBtn = $('<button>', {
@@ -10981,7 +10981,7 @@
                 }
             });
 
-            $('#lvm_open_api').on('click', () => navTo('AI总结配置', shapi));
+            $('#lvm_open_api').on('click', () => navTo('批量填表 API 配置', shapi));
             $('#lvm_open_pmt').on('click', () => navTo('提示词管理', window.LeaseVectorMemory.PromptManager.showPromptManager));
 
             // ==================== 向量化设置按钮 ====================
@@ -12746,7 +12746,7 @@
             <!-- 头部版本信息 -->
             <div style="background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.3); border-radius:8px; padding:12px; text-align:center; flex-shrink:0;">
                 <div style="font-size:18px; font-weight:bold; margin-bottom:5px; color:var(--g-tc);">
-                    📘 记忆表格 (Memory Context)
+                    💠 LEASE Vector Memory
                 </div>
                 <div style="font-size:12px; opacity:0.8; margin-bottom:8px; color:var(--g-tc);">
                     当前版本: v${cleanVer}
@@ -12772,9 +12772,9 @@
                         📢 本次更新内容 (v${cleanVer})
                     </h4>
                     <ul style="margin:0; padding-left:20px; font-size:12px; color:var(--g-tc); opacity:0.9;">
-                        <li><strong>批量填表恢复：</strong>可独立设置间隔楼层、延迟楼层、静默发起与静默保存，不恢复逐条实时填表。</li>
-                        <li><strong>LEASE 合并方案：</strong>每个方案同时保存八张表的结构、总结提示词和追溯提示词，并支持按角色绑定。</li>
-                        <li><strong>向量接管校验：</strong>仅在当前聊天全部总结切片向量化成功后停止发送默认总结，失败时继续兜底。</li>
+                        <li><strong>稳定 R 编号：</strong>删除、排序、冷热转换不会改变其他行 ID，更新永远按 R 编号命中。</li>
+                        <li><strong>行级冷热：</strong>白行直接注入、绿行向量召回、锁定热行对填表 AI 完全不可见。</li>
+                        <li><strong>删除二次总结：</strong>详情表每行直接向量化，Embedding 失败时保持白色。</li>
                     </ul>
                 </div>
 
@@ -12788,13 +12788,13 @@
                         <div style="background:rgba(255,255,255,0.3); padding:10px; border-radius:6px; border:1px solid rgba(0,0,0,0.05);">
                             <div style="font-weight:bold; margin-bottom:4px; color:var(--g-tc); font-size:12px;">📊 记忆表格</div>
                             <div style="font-size:11px; color:var(--g-tc); opacity:0.8;">
-                                通过“LEASE专属”等合并方案管理表结构与提示词；可手动维护，也可按楼层批量追溯，但不要求模型在正文末尾实时填表。
+	                                七张详情表支持批量追溯；稳定 R 编号与事务保护防止模型误写隐藏或锁定记忆。
                             </div>
                         </div>
                         <div style="background:rgba(255,255,255,0.3); padding:10px; border-radius:6px; border:1px solid rgba(0,0,0,0.05);">
-                            <div style="font-weight:bold; margin-bottom:4px; color:var(--g-tc); font-size:12px;">📝 总结与向量</div>
+	                            <div style="font-weight:bold; margin-bottom:4px; color:var(--g-tc); font-size:12px;">💠 冷热与向量</div>
                             <div style="font-size:11px; color:var(--g-tc); opacity:0.8;">
-                                选择具体记忆表格生成总结；成功后可保留、隐藏或删除源行，并可自动按分隔符切片向量化。
+	                                主线、支线默认保留最近 3 行；旧行向量成功后转绿，语义相关时再召回。
                             </div>
                         </div>
                     </div>
@@ -12803,8 +12803,8 @@
                         <div style="font-weight:bold; color:#2e7d32; margin-bottom:4px; font-size:12px;">💡 新手/旧卡 推荐流程</div>
                         <ol style="margin:0; padding-left:15px; font-size:11px; color:#2e7d32;">
                             <li>旧聊天可打开 <strong>【追溯】</strong> 手动补填；日常剧情可在配置中开启按楼层批量填表。</li>
-                            <li>打开 <strong>【总结】</strong>，选择表格与总结后的源行处理方式。</li>
-                            <li>在 <strong>【向量化总结】</strong> 中配置 Embedding API，并开启总结后自动向量化。</li>
+	                            <li>打开 <strong>【向量记忆区】</strong>，按表设置自动降冷和保留 X 行。</li>
+	                            <li>在外部知识书设置中配置 Embedding；只有向量成功的行才会变绿。</li>
                         </ol>
                     </div>
                 </div>
@@ -12845,8 +12845,6 @@
             $('#lvm_btn_copy_config').on('click', function() {
                 const ctx = m.ctx();
                 const currentFloorCount = (ctx && Array.isArray(ctx.chat)) ? ctx.chat.length : 0;
-                const summaryPointer = API_CONFIG.lastSummaryIndex || 0;
-                const summaryProgress = Math.min(summaryPointer, currentFloorCount);
                 const providerKey = String(API_CONFIG.provider || '');
                 const providerNameMap = {
                     proxy_only: 'OpenAI 兼容模式/反代(如build)',
@@ -12902,7 +12900,7 @@
 
                 }
                 const configText = `
-=== 记忆表格 (Memory Context) 运行配置 ===
+=== LEASE Vector Memory 运行配置 ===
 版本: v${cleanVer}
 API模式: ${API_CONFIG.useIndependentAPI ? '独立API (' + providerDisplayName + ')' : '酒馆API'}
 独立API供应商: ${API_CONFIG.useIndependentAPI ? providerDisplayName : 'N/A'}
@@ -12912,22 +12910,20 @@ API模式: ${API_CONFIG.useIndependentAPI ? '独立API (' + providerDisplayName 
 
 【进度状态】
 当前楼层数: ${currentFloorCount}
-总结指针: ${summaryPointer}
-总结进度: ${summaryProgress}/${currentFloorCount}
+批量填表指针: ${API_CONFIG.lastBackfillIndex || 0}
 提示词方案: ${currentPromptProfileName}
 表格结构方案: ${currentTablePresetName}
 
-【总结设置】
-自动总结: ${C.autoSummary ? '开启 (每' + C.autoSummaryFloor + '层触发)' : '关闭'}
-总结来源: 记忆表格
-源行处理: ${C.summaryRowAction || 'hide'}
+【行级冷热】
+主线保留: ${C.coldPolicies?.[0]?.keep || 3} 行
+支线保留: ${C.coldPolicies?.[1]?.keep || 3} 行
 
 【标签过滤】
 黑名单(去除): ${C.filterTags ? C.filterTags : '未设置'}
 白名单(仅留): ${C.filterTagsWhite ? C.filterTagsWhite : '未设置'}
 
 【向量检索】
-独立向量化: ${C.vectorEnabled ? '开启' : '关闭'} (总结后自动: ${C.autoVectorizeSummary ? '开启' : '关闭'})
+独立向量化: ${C.vectorEnabled ? '开启' : '关闭'}（默认最多 ${C.vectorMaxCount || 20} 条）
 ====================================
 `.trim();
 
@@ -12970,7 +12966,7 @@ API模式: ${API_CONFIG.useIndependentAPI ? '独立API (' + providerDisplayName 
         const $icon = $('#gai-about-btn');     // 标题栏的图标
 
         if (!REPO_PATH) {
-            $icon.removeClass('g-has-update').attr('title', '关于 LEASE Memory Context');
+            $icon.removeClass('g-has-update').attr('title', '关于 LEASE Vector Memory');
             if ($status.length > 0) $status.text('🔒 LEASE 本地魔改版不连接上游自动更新');
             return;
         }
