@@ -181,7 +181,11 @@ test('来源区间固定列具有明确裁剪宽度和不透明主题背景', ()
   const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
   assert.match(css, /\.g-col-source\s*\{[\s\S]*?clip-path:\s*inset\(0\)\s*!important/);
   assert.match(css, /\.g-tbl-wrap th\.g-col-source,\s*\.g-tbl-wrap td\.g-col-source\s*\{\s*position:\s*sticky\s*!important/);
-  assert.match(css, /\.lvm-row-source\s*\{[\s\S]*?width:\s*108px\s*!important[\s\S]*?max-width:\s*108px\s*!important[\s\S]*?text-overflow:\s*ellipsis\s*!important/);
+  assert.match(css, /\.g-col-source\s*\{[\s\S]*?width:\s*var\(--lvm-source-width,\s*64px\)\s*!important/);
+  assert.match(css, /\.lvm-row-source\s*\{[\s\S]*?width:\s*calc\(var\(--lvm-source-width,\s*64px\) - 10px\)\s*!important[\s\S]*?text-overflow:\s*ellipsis\s*!important/);
+  assert.match(indexSource, /SOURCE_COL_WIDTH_KEY\s*=\s*'__lvm_source_width__'/);
+  assert.match(indexSource, /title="拖拽调整来源列宽"/);
+  assert.match(indexSource, /setProperty\('--lvm-source-width', newWidth \+ 'px'\)/);
   assert.match(css, /background:\s*var\(--g-sticky-bg,\s*#f6f8fc\)\s*!important/);
   const themeStart = indexSource.indexOf('function thm()');
   const themeEnd = indexSource.indexOf('\n    function ', themeStart + 1);
@@ -196,6 +200,17 @@ test('自动降冷面板不可被 API 配置压缩并提供响应式布局', () 
   assert.match(css, /\.lvm-policy-panel\s*\{[\s\S]*?flex:\s*0 0 auto\s*!important[\s\S]*?height:\s*auto\s*!important[\s\S]*?overflow:\s*visible\s*!important/);
   assert.match(css, /\.lvm-policy-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.lvm-policy-list\s*\{\s*grid-template-columns:\s*1fr/);
+});
+
+test('清表入口不依赖已删除的总结管理器并同步冷记忆索引', () => {
+  const start = indexSource.indexOf("$('#gai-btn-cleanup')");
+  const end = indexSource.indexOf("$('#gai-btn-theme')", start);
+  const cleanup = indexSource.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(cleanup, /m\.sm|lastSummaryIndex/);
+  assert.match(cleanup, /syncColdMemoryAfterCleanup/);
+  assert.equal((cleanup.match(/await syncColdMemoryAfterCleanup\(\)/g) || []).length, 4);
+  assert.doesNotMatch(cleanup, /slice\(0, -1\)\.forEach\(s => s\.clear\(\)\);\s*clearSummarizedMarks\(\)/);
 });
 
 test('追溯请求对主线事件概要追加地点强制规则', () => {
@@ -214,7 +229,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.1' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.2' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console

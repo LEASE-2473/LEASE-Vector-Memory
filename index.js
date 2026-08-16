@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.1
+// LEASE Vector Memory v4.2.2
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.1 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.2 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.1';
+    const V = 'v4.2.2';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -2151,6 +2151,7 @@
     // 列宽管理
     // ❌ saveColWidths() 和 loadColWidths() 已废弃：
     // 列宽/行高现在通过 m.save()/m.load() 自动保存到会话存档中，确保多会话隔离
+    const SOURCE_COL_WIDTH_KEY = '__lvm_source_width__';
 
     function getColWidth(tableIndex, colName) {
         if (userColWidths[tableIndex] && userColWidths[tableIndex][colName]) {
@@ -4824,14 +4825,17 @@
         const v = ti === 0 ? '' : 'display:none;';
         const hasData = s.r.length > 0; // ✅ Check if table has rows
 
-        let h = `<div class="g-tbc" data-i="${ti}" style="${v}"><div class="g-tbl-wrap"><table>`;
+        const sourceColWidth = getColWidth(ti, SOURCE_COL_WIDTH_KEY) || 64;
+        let h = `<div class="g-tbc" data-i="${ti}" style="${v}"><div class="g-tbl-wrap"><table style="--lvm-source-width:${sourceColWidth}px;">`;
 
         // 表头 (保留列宽拖拽)
         h += '<thead class="g-sticky"><tr>';
         h += '<th class="g-col-num">';
         h += '<input type="checkbox" class="g-select-all" data-ti="' + ti + '">';
         h += '</th>';
-        h += '<th class="g-col-source" title="批量填表来源区间">来源区间</th>';
+        h += `<th class="g-col-source" title="批量填表来源区间">来源区间
+            <div class="g-col-resizer" data-ti="${ti}" data-ci="-1" data-col-name="${SOURCE_COL_WIDTH_KEY}" title="拖拽调整来源列宽"></div>
+        </th>`;
 
         // ✅✅✅ 把这段补回来！这是生成列标题的！
         // 🔄 前缀规则：# = 覆盖模式（Overwrite），无前缀 = 追加模式（Append）
@@ -5382,8 +5386,13 @@
             const deltaX = currentX - colStartX;
             const newWidth = Math.max(30, colStartWidth + deltaX); // 最小宽度限制 30px
 
-            // ⚡ 核心修改：直接修改 TH 的宽度
-            $th.css('width', newWidth + 'px');
+            if (colName === SOURCE_COL_WIDTH_KEY) {
+                // 来源列由整张表共享 CSS 变量，拖动时同步更新表头和所有来源单元格。
+                $th.closest('table')[0]?.style.setProperty('--lvm-source-width', newWidth + 'px');
+            } else {
+                // 普通数据列沿用原有表头宽度调整。
+                $th.css('width', newWidth + 'px');
+            }
         });
 
         // 3. 鼠标/手指 抬起 (结束拖拽并保存)
@@ -6164,8 +6173,17 @@
         // 🗑️ 清理数据（整合原来的清表和全清功能）
         // =========================================================
         $('#gai-btn-cleanup').off('click').on('click', async function () {
-            const hasSummary = m.sm.has();
-            const tableCount = m.all().length - 1; // 排除总结表
+            const tableCount = Math.max(0, m.all().length - 1); // 排除末尾的手工记忆表
+
+            // 清表同时重建冷行索引和当前聊天冷记忆书，避免已删除行仍被向量召回。
+            const syncColdMemoryAfterCleanup = async () => {
+                try {
+                    window.LeaseVectorMemory?.rebuildColdIndexCache?.();
+                    await window.LeaseVectorMemory?.syncColdBook?.(false);
+                } catch (error) {
+                    console.warn('⚠️ [清表] 冷记忆索引同步失败，表格数据已正常保存：', error);
+                }
+            };
 
             // 1. 准备弹窗样式变量
             const isDark = UI.darkMode;
@@ -6238,6 +6256,7 @@
 
                 // 保存数据（不重置进度指针）
                 m.save(true, true);
+                await syncColdMemoryAfterCleanup();
 
                 // ✅ 强制更新快照，确保与实时数据同步
                 if (typeof updateCurrentSnapshot === 'function') {
@@ -6268,13 +6287,13 @@
                 const confirmMsg = `确定清空所有 ${tableCount} 个详情表格吗？\n\n✅ 手工记忆将会保留\n✅ 批量填表进度保留\n\n⚠️ 此操作不可恢复！`;
                 if (!await customConfirm(confirmMsg, '确认清空')) return;
 
-                // 清空所有详细表（填表指针不归零+保留总结表）
+                // 清空七张自动表；手工记忆的内容与冷热/锁定状态都保持不变。
                 m.all().slice(0, -1).forEach(s => s.clear());
-                clearSummarizedMarks();
                 lastManualEditTime = Date.now();
 
                 // 保存数据（不重置进度指针）
                 m.save(true, true);
+                await syncColdMemoryAfterCleanup();
 
                 // ✅ 强制更新快照，确保与实时数据同步
                 if (typeof updateCurrentSnapshot === 'function') {
@@ -6305,9 +6324,8 @@
                 const confirmMsg = `确定重置所有 ${tableCount} 个详情表格吗？\n\n将执行：\n✓ 清空七张详情表\n✓ 保留手工记忆\n✓ 重置批量填表进度为 0\n\n⚠️ 此操作不可恢复！`;
                 if (!await customConfirm(confirmMsg, '确认重置')) return;
 
-                // 清空所有详细表（除总结表）
+                // 清空七张自动表；手工记忆的内容与冷热/锁定状态都保持不变。
                 m.all().slice(0, -1).forEach(s => s.clear());
-                clearSummarizedMarks();
                 lastManualEditTime = Date.now();
 
                 // 重置填表进度指针（不重置总结指针）
@@ -6321,6 +6339,7 @@
 
                 // 保存数据
                 m.save(true, true);
+                await syncColdMemoryAfterCleanup();
 
                 // ✅ 强制更新快照，确保与实时数据同步
                 if (typeof updateCurrentSnapshot === 'function') {
@@ -6350,13 +6369,9 @@
             ).click(async function () {
                 let confirmMsg = '⚠️⚠️⚠️ 危险操作 ⚠️⚠️⚠️\n\n确定清空所有数据吗？\n\n';
 
-                if (hasSummary) {
-                    confirmMsg += '🗑️ 将删除所有详细表格\n';
-                    confirmMsg += '🗑️ 将删除手工记忆\n';
-                    confirmMsg += '🗑️ 将重置所有标记\n\n';
-                } else {
-                    confirmMsg += '🗑️ 将删除所有表格数据\n\n';
-                }
+                confirmMsg += '🗑️ 将删除七张自动表\n';
+                confirmMsg += '🗑️ 将删除手工记忆\n';
+                confirmMsg += '🗑️ 将重置所有冷热与锁定状态\n\n';
 
                 confirmMsg += '此操作不可恢复！强烈建议先导出备份！';
 
@@ -6367,10 +6382,6 @@
                 clearSummarizedMarks();
                 lastManualEditTime = Date.now();
 
-                // 2. 重置总结进度
-                API_CONFIG.lastSummaryIndex = 0;
-                localStorage.setItem(AK, JSON.stringify(API_CONFIG));
-
                 // 异步触发云端同步
                 saveAllSettingsToCloud().catch(err => {
                     console.warn('⚠️ [全清] 后台云端同步失败 (不影响本地清空):', err);
@@ -6378,6 +6389,7 @@
 
                 // 强制保存数据
                 m.save(true, true);
+                await syncColdMemoryAfterCleanup();
 
                 // 强制告诉酒馆保存当前状态
                 if (m.ctx() && typeof m.ctx().saveChat === 'function') {

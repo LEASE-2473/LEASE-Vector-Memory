@@ -892,9 +892,9 @@
 .g-tbl-wrap th.g-col-num { z-index: 112 !important; background: var(--g-c) !important; }
 
 .g-col-source {
-    width: 118px !important;
-    min-width: 118px !important;
-    max-width: 118px !important;
+    width: var(--lvm-source-width, 64px) !important;
+    min-width: var(--lvm-source-width, 64px) !important;
+    max-width: var(--lvm-source-width, 64px) !important;
     position: sticky !important;
     left: 62px !important;
     z-index: 91 !important;
@@ -909,9 +909,9 @@
 .g-tbl-wrap th.g-col-source { z-index: 111 !important; background: var(--g-c) !important; }
 .lvm-row-source {
     display: block !important;
-    width: 108px !important;
+    width: calc(var(--lvm-source-width, 64px) - 10px) !important;
     min-width: 0 !important;
-    max-width: 108px !important;
+    max-width: calc(var(--lvm-source-width, 64px) - 10px) !important;
     overflow: hidden !important;
     white-space: nowrap !important;
     text-overflow: ellipsis !important;
@@ -2196,9 +2196,7 @@ th.g-col-ops {
     .lvm-policy-title > span { display:block; margin-top:3px; text-align:left; }
     .lvm-policy-list { grid-template-columns:1fr; }
     .g-col-num { width:56px !important; min-width:56px !important; max-width:56px !important; }
-    .g-col-source { width:96px !important; min-width:96px !important; max-width:96px !important; }
     .g-tbl-wrap th.g-col-source,.g-tbl-wrap td.g-col-source { left:56px !important; }
-    .lvm-row-source { width:86px !important; max-width:86px !important; }
     .g-tbl-wrap td.g-col-ops,#gai-main-pop .g-tbl-wrap th.g-col-ops,th.g-col-ops { width:104px !important; min-width:104px !important; max-width:104px !important; }
     .g-btn-op { flex-basis:44px; font-size:10px !important; }
 }
