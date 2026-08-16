@@ -1,0 +1,146 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+import vm from 'node:vm';
+
+const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+const lifecycleSource = fs.readFileSync(new URL('../memory_lifecycle.js', import.meta.url), 'utf8');
+
+function extractBlock(source, marker) {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing ${marker}`);
+  const signatureEnd = marker.startsWith('function ') ? source.indexOf(')', start) : start;
+  const brace = source.indexOf('{', signatureEnd);
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let i = brace; i < source.length; i++) {
+    const char = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') { quote = char; continue; }
+    if (char === '{') depth++;
+    if (char === '}' && --depth === 0) return source.slice(start, i + 1);
+  }
+  throw new Error(`unterminated ${marker}`);
+}
+
+function loadSheetClass(context = {}) {
+  const sandbox = { window: {}, console, ...context };
+  vm.createContext(sandbox);
+  vm.runInContext(`globalThis.Sheet = ${extractBlock(indexSource, 'class S ')}`, sandbox);
+  return { Sheet: sandbox.Sheet, sandbox };
+}
+
+test('稳定 R 编号删除、移动和 v2 往返后不漂移', () => {
+  const { Sheet } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#日期', '事件']);
+  for (let i = 1; i <= 10; i++) sheet.ins({ 1: `事件${i}` });
+  assert.equal(sheet.r[9].__lvm.id, 'R10');
+  sheet.del('R3');
+  sheet.move(sheet.indexOfId('R4'), 1);
+  assert.equal(sheet.indexOfId('R10') >= 0, true);
+  assert.equal(sheet.r[sheet.indexOfId('R10')][1], '事件10');
+  const saved = JSON.parse(JSON.stringify(sheet.json()));
+  const restored = new Sheet('主线剧情', ['#日期', '事件']);
+  restored.from(saved);
+  assert.equal(restored.r[restored.indexOfId('R10')][1], '事件10');
+  assert.equal(restored.ins({ 1: '新事件' }), 'R11');
+});
+
+test('批量可见文本排除冷行、锁定行和手工记忆', () => {
+  const { Sheet } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['事件']);
+  sheet.ins({ 0: '可写热行' });
+  sheet.ins({ 0: '绿色冷行' });
+  sheet.ins({ 0: '锁定热行' });
+  sheet.r[1].__lvm.cold = true;
+  sheet.r[2].__lvm.locked = true;
+  const backfill = sheet.txt(0, 'backfill');
+  assert.match(backfill, /可写热行/);
+  assert.doesNotMatch(backfill, /绿色冷行|锁定热行/);
+  assert.match(sheet.txt(0, 'story'), /可写热行|锁定热行/);
+  assert.doesNotMatch(sheet.txt(0, 'story'), /绿色冷行/);
+  const manual = new Sheet('手工记忆', ['#标题', '内容', '#标签']);
+  manual.ins({ 0: '标题', 1: '只给日常剧情' });
+  assert.equal(manual.txt(7, 'backfill'), '');
+  assert.match(manual.txt(7, 'story'), /只给日常剧情/);
+});
+
+test('指向冷行的命令使整批事务零写入', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['事件']);
+  sheet.ins({ 0: '旧事件' });
+  sheet.r[0].__lvm.cold = true;
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([
+    { t: 'insert', ti: 0, ri: null, d: { 0: '不应写入' } },
+    { t: 'update', ti: 0, ri: 'R1', d: { 0: '冲突' } }
+  ]);
+  assert.equal(result.success, false);
+  assert.equal(sheet.r.length, 1);
+  assert.equal(sheet.r[0][0], '旧事件');
+  assert.equal(saves, 0);
+});
+
+function lifecycleHarness({ failEmbedding = false } = {}) {
+  const { Sheet } = loadSheetClass();
+  const sheets = [new Sheet('主线剧情', ['事件']), new Sheet('支线剧情', ['事件']), ...Array.from({ length: 5 }, (_, i) => new Sheet(`表${i + 2}`, ['内容'])), new Sheet('手工记忆', ['#标题', '内容', '#标签'])];
+  for (let i = 1; i <= 10; i++) sheets[0].ins({ 0: `事件${i}` });
+  const library = {};
+  const LVM = {
+    m: { all: () => sheets, get: i => sheets[i], gid: () => 'chat-A', save() {} },
+    config_obj: { coldPolicies: Object.fromEntries(sheets.map((_, i) => [i, { enabled: i < 2, keep: 3 }])) },
+    esc: String,
+    VM: {
+      isDataLoaded: true,
+      library,
+      saveLibrary() {},
+      getActiveBooks: () => [],
+      setActiveBooks() {},
+      async vectorizeBook(bookId) {
+        const book = library[bookId];
+        if (failEmbedding) return { success: false, errors: book.chunks.length, lastError: 'mock failure' };
+        book.chunks.forEach((_, i) => { book.vectorized[i] = true; book.vectors[i] = [i + 1]; });
+        return { success: true, errors: 0 };
+      }
+    }
+  };
+  const jq = () => ({ length: 0 });
+  const sandbox = { window: { LeaseVectorMemory: LVM }, console, setTimeout: () => 0, clearTimeout() {}, $: jq };
+  vm.createContext(sandbox);
+  vm.runInContext(lifecycleSource, sandbox);
+  return { LVM, sheets };
+}
+
+test('十行主线 X=3 时仅 R1-R7 成功转冷', async () => {
+  const { LVM, sheets } = lifecycleHarness();
+  const result = await LVM.reconcileColdRows();
+  assert.equal(result.success, true);
+  assert.equal(sheets[0].r.map(row => row.__lvm.cold).join(','), 'true,true,true,true,true,true,true,false,false,false');
+});
+
+test('Embedding 失败的候选行保持白色', async () => {
+  const { LVM, sheets } = lifecycleHarness({ failEmbedding: true });
+  const result = await LVM.reconcileColdRows();
+  assert.equal(result.success, false);
+  assert.equal(sheets[0].r.some(row => row.__lvm.cold), false);
+});
+
+test('身份、存储和数据库命名空间完全隔离', () => {
+  const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+  const allSource = fs.readdirSync(new URL('..', import.meta.url)).filter(name => name.endsWith('.js')).map(name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8')).join('\n');
+  assert.equal(manifest.id, 'lease_vector_memory');
+  assert.match(allSource, /LEASE_Vector_Memory_Database/);
+  assert.doesNotMatch(allSource, /extension_settings\.st_memory_table|chatMetadata\.gaigai|Memory_Vector_Database/);
+});

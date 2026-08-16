@@ -1,5 +1,14 @@
 # 更改日志
 
+## 2026-08-16 LEASE Vector Memory 独立二次魔改 v4.0.0
+
+- **用户目标**：在不修改旧魔改项目的前提下建立独立仓库，删除二次总结链，以稳定 R 编号和行级冷热向量记忆解决批量填表误写、隐藏历史与总结冲突。
+- **主要修改**：从旧仓库已提交 `main` 快照建立无远端的独立基线；插件身份改为 `LEASE Vector Memory / lease_vector_memory`，全部存储切换到 `lvm_`/`lvm` 命名空间和 `LEASE_Vector_Memory_Database`。新增 v2 `{cells, meta}` 持久化、永不复用 R 编号、批处理来源区间、冷/热/锁定状态、手工记忆表、逐表 X、Embedding 成功后转绿、失败回白、按聊天冷记忆书及向量记忆区。批量填表仅接收未锁定白行，非法 R、冷行、锁定行或手工表冲突会使整批零写入。默认注入点改为预设/System/世界书后、历史前，调试面板增加位置和冷热统计。旧文件迁移忽略总结表与旧绿色状态，再按 X 安全降冷。删除 `summary_manager.js`、总结触发、总结提示词和总结向量同步入口。
+- **修改的文件**：`index.js`、`backfill_manager.js`、`memory_lifecycle.js`、`vector_manager.js`、`prompt_manager.js`、`io_manager.js`、`debug_manager.js`、`phone-adapter.js`、`style.css`、`manifest.json`、`package.json`、`tests/core.test.mjs`、`README.md`、`PROJECT_CONTEXT.md`、`ATTRIBUTION.md`、`GITHUB_PUBLISHING_SAFETY.md`；删除 `summary_manager.js`。
+- **验证**：`npm test` 通过 6/6 项；`npm run check` 通过六个核心 JavaScript 语法检查；全部顶层 JavaScript 另行逐个 `node --check`；`manifest.json` 可解析。测试覆盖稳定 ID 与 v2 往返、冷/锁定/手工可见性、冲突整批拒绝、十行主线 X=3、Embedding 失败保持白色和命名空间隔离。
+- **未完成事项**：尚未复制到独立 SillyTavern 测试环境；尚未调用真实剧情模型、Embedding 或 Rerank API；尚未完成聊天切换、提示词最终索引、移动端 UI 与外部向量书实机回归；尚未创建 GitHub 仓库或 remote。
+- **已知风险与建议**：旧版仍有少量不可达的总结辅助死代码和历史字段，当前不会加载总结模块或显示总结配置，但后续应继续做纯清理审计。实机验收前保持旧插件停用且不要连接远端。
+
 ## 2026-08-02 恢复上游总结控制台、自动确认与总结表归档
 
 - **用户目标**：按提醒恢复偏离上游的总结/追溯 UI，找回自动表格总结前带确定、取消和临时顺延的确认弹窗，并修复“记忆总结”表在总结和向量化成功后没有归档隐藏的问题。
@@ -30,7 +39,7 @@
 ## 2026-08-02 恢复上游“注入记忆表格”配置样式
 
 - **用户目标**：注入记忆表格功能不做 LEASE 化 UI，恢复上游原本的样式、名称和位置。
-- **主要修改**：把 `gg_c_table_inj` 从“记忆总结（默认设置）”折叠区移回自动隐藏与自动总结之间的独立配置卡；恢复上游“💉 注入记忆表格”标题、白色卡片样式、信息图标和“注入策略点击上方 i 图标查看”说明；恢复同风格变量说明弹窗。表格变量遵循上游语义：`{{MEMORY}}` 的表格部分跟随开关，`{{MEMORY_TABLE}}` 与 `{{MEMORY_TABLE_表名}}` 为显式强制表格锚点。版本升至 `3.3.1`。
+- **主要修改**：把 `lvm_c_table_inj` 从“记忆总结（默认设置）”折叠区移回自动隐藏与自动总结之间的独立配置卡；恢复上游“💉 注入记忆表格”标题、白色卡片样式、信息图标和“注入策略点击上方 i 图标查看”说明；恢复同风格变量说明弹窗。表格变量遵循上游语义：`{{MEMORY}}` 的表格部分跟随开关，`{{MEMORY_TABLE}}` 与 `{{MEMORY_TABLE_表名}}` 为显式强制表格锚点。版本升至 `3.3.1`。
 - **修改的文件**：`index.js`、`manifest.json`、`README.md`、`PROJECT_CONTEXT.md`、`CHANGELOG.md`；同步修订两份外部审计报告。未修改或同步 SillyTavern 本地运行目录。
 - **验证**：执行全部 JavaScript 语法检查、manifest 解析、上游卡片静态结构对照及注入行为测试。
 - **未完成事项**：尚未在 SillyTavern 实机点击信息图标、切换开关并查看真实请求。

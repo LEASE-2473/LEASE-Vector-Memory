@@ -1,0 +1,9 @@
+{
+  "name": "lease-vector-memory",
+  "version": "4.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check index.js && node --check backfill_manager.js && node --check prompt_manager.js && node --check vector_manager.js && node --check memory_lifecycle.js && node --check io_manager.js"
+  }
+}
