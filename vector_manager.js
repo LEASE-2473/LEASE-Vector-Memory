@@ -1123,6 +1123,7 @@
          */
         deleteBook(bookId) {
             if (this.library[bookId]) {
+                if (this.library[bookId].system || this.library[bookId].type === 'cold_memory') return false;
                 delete this.library[bookId];
 
                 // 从所有会话的绑定中移除
@@ -1144,11 +1145,11 @@
          * 🧹 清空所有书籍
          */
         clearAllBooks() {
-            this.library = {};
+            this.library = Object.fromEntries(Object.entries(this.library).filter(([, book]) => book.system || book.type === 'cold_memory'));
             this.saveLibrary();
 
-            // 清空当前会话的绑定
-            this.setActiveBooks([]);
+            // 仅清除外部知识书绑定，保留当前聊天的系统冷记忆书。
+            this.setActiveBooks(this.getActiveBooks().filter(bookId => this.library[bookId]?.system || this.library[bookId]?.type === 'cold_memory'));
 
             console.log('🧹 [VectorManager] 已清空所有书籍');
         }
@@ -1174,7 +1175,7 @@
             const lines = [];
 
             // 确定要导出的书籍
-            let booksToExport = Object.entries(this.library);
+            let booksToExport = Object.entries(this.library).filter(([, book]) => !book.system && book.type !== 'cold_memory');
             if (specificBookIds && Array.isArray(specificBookIds) && specificBookIds.length > 0) {
                 booksToExport = booksToExport.filter(([bookId]) => specificBookIds.includes(bookId));
             }
@@ -1329,6 +1330,12 @@
                 // 更新数据（合并模式）
                 // 保留旧书架 (this.library)，将导入的新书 (newLibrary) 合并进去
                 // 如果ID相同，新导入的会覆盖旧的
+                Object.keys(newLibrary).forEach(bookId => {
+                    const bookName = String(newLibrary[bookId]?.name || '');
+                    if (/^summary_book_/i.test(bookId) || /^lvm_cold_/i.test(bookId) || /剧情总结归档/.test(bookName)) {
+                        delete newLibrary[bookId];
+                    }
+                });
                 Object.assign(this.library, newLibrary);
 
                 this.saveLibrary();
@@ -1689,7 +1696,7 @@
                                     <i class="fa-solid fa-book"></i> 我的书架
                                 </div>
                                 <div style="font-size: 10px; color: ${UI.tc}; opacity: 0.7;">
-                                    ${Object.keys(this.library).length} 本书
+                                    ${Object.values(this.library).filter(book => !book.system && book.type !== 'cold_memory').length} 本书
                                 </div>
                             </div>
 
@@ -1729,7 +1736,8 @@
          * @private
          */
         _renderBookList(UI, activeBooks) {
-            if (Object.keys(this.library).length === 0) {
+            const externalBooks = Object.entries(this.library).filter(([, book]) => !book.system && book.type !== 'cold_memory');
+            if (externalBooks.length === 0) {
                 return `
                     <div style="text-align: center; padding: 40px; color: ${UI.tc}; opacity: 0.5;">
                         <i class="fa-solid fa-inbox" style="font-size: 48px; margin-bottom: 10px;"></i>
@@ -1739,7 +1747,7 @@
                 `;
             }
 
-            return Object.entries(this.library).map(([bookId, book]) => {
+            return externalBooks.map(([bookId, book]) => {
                 const isActive = activeBooks.includes(bookId);
                 const isSelected = (bookId === this.selectedBookId); // ✅ 检查是否选中
                 const vectorizedCount = book.vectorized.filter(v => v).length;
