@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.0
+// LEASE Vector Memory v4.2.1
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.0 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.1 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.0';
+    const V = 'v4.2.1';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -3386,6 +3386,8 @@
 
         // ✅ 🌙 Dark Mode: 动态变量定义 (深色毛玻璃版)
         const isDark = UI.darkMode;
+        // 固定列必须使用不透明背景，否则横向滚动时下方数据会透过行号/来源列显示。
+        document.documentElement.style.setProperty('--g-sticky-bg', isDark ? '#24272d' : '#f6f8fc');
         const bg_header_glass = isDark ? `rgba(${rgbStr}, 0.48)` : `rgba(${rgbStr}, 0.56)`;
         const bg_toolbar_glass = isDark ? `rgba(${rgbStr}, 0.16)` : `rgba(${rgbStr}, 0.20)`;
         const bg_button_glass = isDark ? `rgba(${rgbStr}, 0.24)` : `rgba(${rgbStr}, 0.26)`;
@@ -3615,6 +3617,17 @@
         .g-row.g-summarized td:not(.g-col-ops) {
             background-color: rgba(40, 167, 69, 0.12) !important;
             opacity: 0.5 !important;
+        }
+
+        /* 行号与来源是横向滚动时的固定列：保持不透明，避免底层数据叠字。 */
+        #gai-main-pop .g-tbl-wrap td.g-col-num,
+        #gai-main-pop .g-tbl-wrap td.g-col-source {
+            background: ${book_surface} !important;
+        }
+        #gai-main-pop .g-row.g-summarized td.g-col-num,
+        #gai-main-pop .g-row.g-summarized td.g-col-source {
+            background: color-mix(in srgb, ${book_surface} 82%, #28a745 18%) !important;
+            opacity: 1 !important;
         }
 
         /* 3. 确保操作列完全透明且不透明度正常 */
@@ -4815,7 +4828,7 @@
 
         // 表头 (保留列宽拖拽)
         h += '<thead class="g-sticky"><tr>';
-        h += '<th class="g-col-num" style="width:40px; min-width:40px; max-width:40px;">';
+        h += '<th class="g-col-num">';
         h += '<input type="checkbox" class="g-select-all" data-ti="' + ti + '">';
         h += '</th>';
         h += '<th class="g-col-source" title="批量填表来源区间">来源区间</th>';
@@ -4888,14 +4901,14 @@
                 const heightStyle = rh ? `height:${rh}px !important;` : '';
 
                 // 1. 左侧行号列 (带行高拖拽)
-                h += `<td class="g-col-num" style="width:40px; min-width:40px; max-width:40px; ${heightStyle}">
+                h += `<td class="g-col-num" style="${heightStyle}">
                 <div class="g-n">
                     <input type="checkbox" class="g-row-select" data-r="${ri}">
                     <div title="稳定行ID">${rowMeta.id}</div>
                     <div class="g-row-resizer" data-ti="${ti}" data-r="${ri}" title="拖拽调整行高"></div>
                 </div>
             </td>`;
-                h += `<td class="g-col-source" style="${heightStyle}" title="${esc(sourceRanges)}"><div class="lvm-row-source">${esc(sourceRanges)}</div></td>`;
+                h += `<td class="g-col-source" style="${heightStyle}" title="${esc(sourceRanges)}"><div class="lvm-row-source" title="${esc(sourceRanges)}">${esc(sourceRanges)}</div></td>`;
 
                 // ✅ 数据列
                 s.c.forEach((c, ci) => {

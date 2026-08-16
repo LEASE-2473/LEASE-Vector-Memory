@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LEASE Vector Memory UI Regression</title>
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    :root { --g-c:#777; --g-tc:#222; --g-sticky-bg:#f6f8fc; --g-rh:36px; }
+    body { margin:0; padding:20px; background:#dfe3e8; color:#222; font:12px "Microsoft YaHei",sans-serif; }
+    .fixture { max-width:1000px; margin:0 auto 24px; padding:14px; background:rgba(255,255,255,.75); border-radius:10px; }
+    .gg-vm-left { width:100%; max-width:760px; height:520px; margin:auto; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+    .fake-api { flex:0 0 auto; min-height:620px; padding:12px; border:1px solid #bbb; border-radius:8px; background:#eee; }
+    .fake-api div { height:28px; margin:8px 0; background:white; border:1px solid #ccc; border-radius:4px; }
+    .g-tbl-wrap { max-width:720px; height:190px; padding:0 !important; background:#fff; }
+    .g-tbl-wrap th:nth-child(n+3),.g-tbl-wrap td:nth-child(n+3) { width:180px; min-width:180px; max-width:180px; }
+  </style>
+</head>
+<body>
+  <section class="fixture">
+    <h2>自动降冷面板</h2>
+    <div class="gg-vm-left">
+      <section class="lvm-policy-panel">
+        <div class="lvm-policy-title"><h4>❄️ 表格自动降冷</h4><span>按每张表的行数保留近期热记忆</span></div>
+        <div class="lvm-policy-list">
+          <div class="lvm-policy-row"><span class="lvm-policy-name">主线剧情</span><label class="lvm-policy-toggle"><input type="checkbox" checked><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">支线追踪</span><label class="lvm-policy-toggle"><input type="checkbox" checked><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">角色信息</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">人物关系</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">世界设定</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">物品追踪</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">约定</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+          <div class="lvm-policy-row"><span class="lvm-policy-name">手工记忆</span><label class="lvm-policy-toggle"><input type="checkbox"><span>自动</span></label><label class="lvm-policy-retain"><span>保留</span><input type="number" value="3"><span>行</span></label></div>
+        </div>
+        <button id="lvm-apply-policies">立即按各表设置整理</button>
+        <div class="lvm-help-note">手动转冷、转热和锁定请在主表操作。只有 Embedding 成功的行才会变绿。</div>
+      </section>
+      <div class="fake-api"><strong>API 配置（用于模拟实际长面板）</strong><div></div><div></div><div></div><div></div></div>
+    </div>
+  </section>
+  <section class="fixture">
+    <h2>来源固定列</h2>
+    <div class="g-tbl-wrap">
+      <table><thead><tr><th class="g-col-num">✓</th><th class="g-col-source">来源区间</th><th>主体角色</th><th>对象角色</th><th>客观关系</th><th>主体态度</th></tr></thead>
+      <tbody><tr class="g-row"><td class="g-col-num"><div class="g-n">☐ R1</div></td><td class="g-col-source"><div class="lvm-row-source">0-30、30-60、60-90、90-120、120-150</div></td><td>俞晚晴</td><td>洛川</td><td>师生/疑似恋人待定</td><td>警惕与包容</td></tr></tbody></table>
+    </div>
+  </section>
+</body>
+</html>

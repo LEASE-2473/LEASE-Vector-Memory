@@ -277,12 +277,31 @@
     function policyHtml() {
         return (LVM.m?.all?.() || []).map((sheet, tableIndex) => {
             const policy = LVM.config_obj.coldPolicies?.[tableIndex] || { enabled: tableIndex < 2, keep: 3 };
-            return `<label style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:5px 0;"><span>${LVM.esc(sheet.n)}</span><input class="lvm-policy-on" data-ti="${tableIndex}" type="checkbox" ${policy.enabled ? 'checked' : ''}><input class="lvm-policy-keep" data-ti="${tableIndex}" type="number" min="1" value="${policy.keep}" style="width:56px;"></label>`;
+            return `<div class="lvm-policy-row">
+                <span class="lvm-policy-name" title="${LVM.esc(sheet.n)}">${LVM.esc(sheet.n)}</span>
+                <label class="lvm-policy-toggle" title="是否自动降冷">
+                    <input class="lvm-policy-on" data-ti="${tableIndex}" type="checkbox" ${policy.enabled ? 'checked' : ''}>
+                    <span>自动</span>
+                </label>
+                <label class="lvm-policy-retain" title="保留多少条白色热行">
+                    <span>保留</span>
+                    <input class="lvm-policy-keep" data-ti="${tableIndex}" type="number" min="1" value="${policy.keep}">
+                    <span>行</span>
+                </label>
+            </div>`;
         }).join('');
     }
 
     function coldPolicyPanelHtml() {
-        return `<div class="lvm-policy-panel"><h4>逐表自动降冷</h4>${policyHtml()}<button id="lvm-apply-policies" style="width:100%;margin-top:8px;">立即按各表 X 整理</button><div class="lvm-help-note">表格行的手动转冷、转热和锁定直接在主表操作。关闭某表自动降冷后，该表白行继续直接注入；绿色仅在 Embedding 成功后生效。</div></div>`;
+        return `<section class="lvm-policy-panel">
+            <div class="lvm-policy-title">
+                <h4>❄️ 表格自动降冷</h4>
+                <span>按每张表的行数保留近期热记忆</span>
+            </div>
+            <div class="lvm-policy-list">${policyHtml()}</div>
+            <button id="lvm-apply-policies" type="button">立即按各表设置整理</button>
+            <div class="lvm-help-note">手动转冷、转热和锁定请在主表操作。只有 Embedding 成功的行才会变绿；失败时仍保持白色。</div>
+        </section>`;
     }
 
     function bindColdPolicyEvents() {

@@ -177,6 +177,27 @@ test('向量记忆 UI 合并冷热与 API，并精简主表操作', () => {
   assert.match(vectorSource, /const books = Object\.entries\(this\.library\)/);
 });
 
+test('来源区间固定列具有明确裁剪宽度和不透明主题背景', () => {
+  const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.g-col-source\s*\{[\s\S]*?clip-path:\s*inset\(0\)\s*!important/);
+  assert.match(css, /\.g-tbl-wrap th\.g-col-source,\s*\.g-tbl-wrap td\.g-col-source\s*\{\s*position:\s*sticky\s*!important/);
+  assert.match(css, /\.lvm-row-source\s*\{[\s\S]*?width:\s*108px\s*!important[\s\S]*?max-width:\s*108px\s*!important[\s\S]*?text-overflow:\s*ellipsis\s*!important/);
+  assert.match(css, /background:\s*var\(--g-sticky-bg,\s*#f6f8fc\)\s*!important/);
+  const themeStart = indexSource.indexOf('function thm()');
+  const themeEnd = indexSource.indexOf('\n    function ', themeStart + 1);
+  assert.match(indexSource.slice(themeStart, themeEnd), /setProperty\('--g-sticky-bg'/);
+  assert.doesNotMatch(indexSource, /class="g-col-num" style="width:40px/);
+});
+
+test('自动降冷面板不可被 API 配置压缩并提供响应式布局', () => {
+  const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+  assert.match(lifecycleSource, /class="lvm-policy-list"/);
+  assert.match(lifecycleSource, /class="lvm-policy-row"/);
+  assert.match(css, /\.lvm-policy-panel\s*\{[\s\S]*?flex:\s*0 0 auto\s*!important[\s\S]*?height:\s*auto\s*!important[\s\S]*?overflow:\s*visible\s*!important/);
+  assert.match(css, /\.lvm-policy-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.lvm-policy-list\s*\{\s*grid-template-columns:\s*1fr/);
+});
+
 test('追溯请求对主线事件概要追加地点强制规则', () => {
   assert.match(backfillSource, /【主线地点强制·最高优先级】/);
   assert.match(backfillSource, /“\[地点\]角色行为\/互动\/结果”/);
@@ -193,7 +214,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.0' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.1' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console
