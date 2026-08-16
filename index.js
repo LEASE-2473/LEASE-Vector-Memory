@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.1.1
+// LEASE Vector Memory v4.2.0
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.1.1 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.0 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.1.1';
+    const V = 'v4.2.0';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -4818,6 +4818,7 @@
         h += '<th class="g-col-num" style="width:40px; min-width:40px; max-width:40px;">';
         h += '<input type="checkbox" class="g-select-all" data-ti="' + ti + '">';
         h += '</th>';
+        h += '<th class="g-col-source" title="批量填表来源区间">来源区间</th>';
 
         // ✅✅✅ 把这段补回来！这是生成列标题的！
         // 🔄 前缀规则：# = 覆盖模式（Overwrite），无前缀 = 追加模式（Append）
@@ -4843,7 +4844,7 @@
         // 表格内容
         if (!hasData) {
             // ✅ Fix colspan: RowNum(1) + DataColumns(s.c.length)
-            h += `<tr class="g-emp"><td colspan="${s.c.length + 1}">暂无数据</td></tr>`;
+            h += `<tr class="g-emp"><td colspan="${s.c.length + 2}">暂无数据</td></tr>`;
         } else {
             // ✅ 智能视图排序逻辑：支持沉底与倒序混合
             const renderRows = () => {
@@ -4878,6 +4879,7 @@
             const renderRow = (ri) => {
                 const rw = s.r[ri];
                 const rowMeta = s._ensureMeta(rw).__lvm;
+                const sourceRanges = rowMeta.sources.map(x => `${x.start}-${x.end}`).join('、') || '手工';
                 const summarizedClass = isSummarized(ti, ri) ? ' g-summarized' : '';
                 h += `<tr data-r="${ri}" data-ti="${ti}" class="g-row${summarizedClass}">`;
 
@@ -4890,10 +4892,10 @@
                 <div class="g-n">
                     <input type="checkbox" class="g-row-select" data-r="${ri}">
                     <div title="稳定行ID">${rowMeta.id}</div>
-                    <div class="lvm-row-source" title="来源楼层">${esc(rowMeta.sources.map(x => `${x.start}-${x.end}`).join(', ') || '手工')}</div>
                     <div class="g-row-resizer" data-ti="${ti}" data-r="${ri}" title="拖拽调整行高"></div>
                 </div>
             </td>`;
+                h += `<td class="g-col-source" style="${heightStyle}" title="${esc(sourceRanges)}"><div class="lvm-row-source">${esc(sourceRanges)}</div></td>`;
 
                 // ✅ 数据列
                 s.c.forEach((c, ci) => {
@@ -4912,7 +4914,6 @@
                 <div class="g-ops-wrap">
                     <button class="g-btn-op lvm-temp-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.locked ? '锁定热行不能转冷' : (rowMeta.cold ? '恢复为热记忆' : '向量化并转冷')}" ${rowMeta.locked ? 'disabled' : ''}>${rowMeta.cold ? '🟢 转热' : '⚪ 转冷'}</button>
                     <button class="g-btn-op lvm-lock-toggle" data-ti="${ti}" data-r="${ri}" title="${rowMeta.locked ? '取消锁定' : '锁定：不发送给填表AI'}">${rowMeta.locked ? '🔒 解锁' : '🔓 锁定'}</button>
-                    <span class="lvm-row-order"><button class="g-btn-op up" data-ti="${ti}" data-r="${ri}" title="上移">↑</button><button class="g-btn-op down" data-ti="${ti}" data-r="${ri}" title="下移">↓</button></span>
                 </div>
             </td>`;
 
@@ -5750,7 +5751,7 @@
             }
         });
 
-        // ========== 行移动按钮 (Move Row Up/Down) ==========
+        // ========== 行冷热与锁定按钮 ==========
         $('#gai-main-pop').off('click', '.g-btn-op').on('click', '.g-btn-op', function (e) {
             e.stopPropagation(); // ✅ 关键：阻止触发行选择
 
@@ -5779,48 +5780,6 @@
                     .then(() => refreshTable(ti));
                 return;
             }
-
-            // ✨✨✨ 修复开始：根据倒序视图调整移动方向 ✨✨✨
-            let direction = $btn.hasClass('up') ? -1 : 1;
-
-            // 如果开启了倒序显示,视觉上的"上"其实是索引增加的方向,"下"是索引减小的方向
-            // 所以需要反转方向
-            if (C.reverseView) {
-                direction = -direction;
-            }
-            // ✨✨✨ 修复结束 ✨✨✨
-
-            // 调用 move 方法
-            const success = sh.move(ri, direction);
-            if (!success) {
-                // 无法移动（已在边界）
-                if (typeof toastr !== 'undefined') {
-                    toastr.warning('无法移动：已在表格边界', '提示', { timeOut: 1000 });
-                }
-                return;
-            }
-
-            // 更新时间戳
-            lastManualEditTime = Date.now();
-
-            // 保存数据
-            m.save(true, true); // 行移动操作立即保存
-
-            // 刷新表格
-            refreshTable(ti);
-
-            // ✅ UX增强：刷新后保持选中状态（移动到新位置）
-            const newIndex = ri + direction;
-            setTimeout(() => {
-                const $newRow = $(`.g-tbc[data-i="${ti}"] .g-row[data-r="${newIndex}"]`);
-                $newRow.addClass('g-selected');
-
-                // 同步复选框状态
-                $newRow.find('.g-row-select').prop('checked', true);
-
-                // 更新 selectedRow 变量
-                selectedRow = newIndex;
-            }, 50);
         });
 
         // 新增行

@@ -1721,7 +1721,7 @@
                 </div>
             `;
 
-            const $mainWindow = pop(mode === 'api' ? '🔌 向量化 API 设置' : '📚 知识书管理', html, true);
+            const $mainWindow = pop(mode === 'api' ? '❄️ 冷热与向量 API' : '📚 知识书管理', html, true);
             // 注释掉强制宽度设置，让 CSS 的 @media 适配自动生效，避免手机端左右有空隙
             // if ($mainWindow) {
             //     $mainWindow.attr('style', 'width: 90vw !important; height: 80vh !important; max-width: 1200px !important; max-height: 90vh !important; display: flex !important; flex-direction: column !important; pointer-events: auto !important;');
@@ -1730,6 +1730,8 @@
             // 绑定事件
             setTimeout(() => {
                 if (mode === 'api') {
+                    const policyPanel = window.LeaseVectorMemory?.coldPolicyPanelHtml?.();
+                    if (policyPanel) $('.gg-vm-left').prepend(policyPanel);
                     $('.gg-vm-global-section, .gg-vm-book-list-wrapper, .gg-vm-right').hide();
                     $('.gg-vm-left').css({ maxWidth: '760px', width: '100%', margin: '0 auto' });
                 } else {
@@ -1737,7 +1739,7 @@
                     $('.gg-vm-left').css({ maxWidth: '420px' });
                 }
                 this._bindUIEvents();
-                $('#lvm-tab-memory').off('click').on('click', () => window.LeaseVectorMemory?.showVectorMemoryUI?.());
+                window.LeaseVectorMemory?.bindColdPolicyEvents?.();
                 $('#lvm-tab-api').off('click').on('click', () => this.showUI('api'));
                 $('#lvm-tab-books').off('click').on('click', () => this.showUI('books'));
             }, 100);

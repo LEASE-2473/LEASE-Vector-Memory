@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 const lifecycleSource = fs.readFileSync(new URL('../memory_lifecycle.js', import.meta.url), 'utf8');
 const vectorSource = fs.readFileSync(new URL('../vector_manager.js', import.meta.url), 'utf8');
+const backfillSource = fs.readFileSync(new URL('../backfill_manager.js', import.meta.url), 'utf8');
 
 function extractBlock(source, marker) {
   const start = source.indexOf(marker);
@@ -146,6 +147,15 @@ test('向量总开关关闭时自动降冷跳过且所有行保持白色', async
   assert.equal(sheets[0].r.some(row => row.__lvm.cold), false);
 });
 
+test('行向量文本不包含稳定 R 编号和来源楼层', () => {
+  const { LVM, sheets } = lifecycleHarness();
+  sheets[0].r[0].__lvm.cold = true;
+  sheets[0].r[0].__lvm.sources = [{ start: 0, end: 30 }];
+  const text = LVM.collectColdEntries()[0].text;
+  assert.equal(text, '[主线剧情]\n事件：事件1');
+  assert.doesNotMatch(text, /R1|来源|0-30/);
+});
+
 test('身份、存储和数据库命名空间完全隔离', () => {
   const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   const allSource = fs.readdirSync(new URL('..', import.meta.url)).filter(name => name.endsWith('.js')).map(name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8')).join('\n');
@@ -154,15 +164,22 @@ test('身份、存储和数据库命名空间完全隔离', () => {
   assert.doesNotMatch(allSource, /extension_settings\.st_memory_table|chatMetadata\.gaigai|Memory_Vector_Database/);
 });
 
-test('向量记忆 UI 暴露三个分区和主表显隐锁定入口', () => {
+test('向量记忆 UI 合并冷热与 API，并精简主表操作', () => {
   const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
-  assert.match(lifecycleSource, /当前聊天记忆库/);
-  assert.match(lifecycleSource, /API 设置/);
+  assert.match(lifecycleSource, /冷热与 API/);
   assert.match(lifecycleSource, /知识书管理/);
+  assert.doesNotMatch(lifecycleSource, /当前聊天记忆库/);
   assert.match(indexSource, /id="gai-btn-memory-state"/);
   assert.match(indexSource, /状态 \/ 操作/);
+  assert.match(indexSource, /class="g-col-source"/);
+  assert.doesNotMatch(indexSource, /class="lvm-row-order"/);
   assert.match(css, /\.g-ops-wrap[\s\S]*?opacity:\s*1\s*!important/);
   assert.match(vectorSource, /const books = Object\.entries\(this\.library\)/);
+});
+
+test('追溯请求对主线事件概要追加地点强制规则', () => {
+  assert.match(backfillSource, /【主线地点强制·最高优先级】/);
+  assert.match(backfillSource, /“\[地点\]角色行为\/互动\/结果”/);
 });
 
 test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', () => {
@@ -176,7 +193,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.1.1' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.0' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console

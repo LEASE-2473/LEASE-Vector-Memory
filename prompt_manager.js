@@ -15,7 +15,7 @@
 
     // ===== 常量定义 =====
     const PROFILE_KEY = 'lvm_profiles';  // 预设数据存储键
-    const PROMPT_VERSION = 7.1;         // LEASE 组合方案版本号
+    const PROMPT_VERSION = 7.2;         // LEASE 组合方案版本号
     const DEFAULT_PROMPT_PROFILE_ID = 'default';
     const DEFAULT_PROMPT_PROFILE_NAME = 'LEASE专属';
     const DEFAULT_TABLE_PRESET_NAME = 'LEASE专属';
@@ -47,6 +47,16 @@
             legacyTablePresetNames: ['默认结构', 'yuzuki-方案三-表格结构']
         }
     ];
+
+    const MAIN_PLOT_LOCATION_RULE = `
+
+【主线事件概要·地点强制规则】
+主线剧情（表0）的“事件概要”中，每个事件片段都必须写明实际发生地点，使用“[地点]角色行为/互动/结果”的格式；发生地点切换时必须在对应片段重新标注新地点。不得只写人物行为而省略地点。`;
+
+    function ensureMainPlotLocationRule(prompt) {
+        const text = String(prompt || '').trim();
+        return text.includes('【主线事件概要·地点强制规则】') ? text : `${text}${MAIN_PLOT_LOCATION_RULE}`;
+    }
 
     // ========================================================================
     // 默认提示词定义区
@@ -502,6 +512,7 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
         const applySharedPromptUpdates = (data) => {
             const updated = normalizePromptDataShape(data, fallback);
             updated.nsfwPrompt = NSFW_UNLOCK;
+            updated.backfillPrompt = ensureMainPlotLocationRule(updated.backfillPrompt);
             updated.promptVersion = PROMPT_VERSION;
             return updated;
         };

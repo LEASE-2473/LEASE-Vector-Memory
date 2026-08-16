@@ -968,6 +968,9 @@ ${lastError.message}
 
             let backfillInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             backfillInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID，不是数组下标。更新必须写成 updateRow(表号, "R编号", {列号:"值"})，删除必须写成 deleteRow(表号, "R编号")。新增仍写 insertRow(表号, {列号:"值"})，系统自动生成新 R 编号。只能更新当前表格状态中实际可见的 R 编号；绿色冷行、锁定行和手工记忆表不会提供给你，也绝对禁止猜测。`;
+            if (targetIndex === -1 || targetIndex === 0) {
+                backfillInstruction += `\n\n【主线地点强制·最高优先级】\n主线剧情（表0）的“事件概要”必须写明事件实际发生地点，格式为“[地点]角色行为/互动/结果”；地点切换后必须在对应片段重新标注新地点，严禁只写行为而省略地点。`;
+            }
 
             // 🎯 单表模式指令追加
             if (targetIndex >= 0 && targetIndex < m.s.length - 1 && m.s[targetIndex]) {
@@ -2376,6 +2379,9 @@ ${lastError.message}
 
             let finalInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             finalInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID。更新使用 updateRow(表号, "R编号", {...})，删除使用 deleteRow(表号, "R编号")，新增使用 insertRow(表号, {...})。严禁使用数组行号或猜测不可见行。`;
+            if (targetIndex === -1 || targetIndex === 0) {
+                finalInstruction += `\n\n【主线地点强制·最高优先级】\n主线剧情（表0）的“事件概要”必须写明事件实际发生地点，格式为“[地点]角色行为/互动/结果”；地点切换后必须重新标注新地点。`;
+            }
 
             // 🎯 [关键修复] 单表模式指令直接拼接到 finalInstruction 后面
             if (targetIndex >= 0 && targetIndex < m.s.length - 1 && m.s[targetIndex]) {
