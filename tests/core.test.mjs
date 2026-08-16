@@ -7,6 +7,7 @@ const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'ut
 const lifecycleSource = fs.readFileSync(new URL('../memory_lifecycle.js', import.meta.url), 'utf8');
 const vectorSource = fs.readFileSync(new URL('../vector_manager.js', import.meta.url), 'utf8');
 const backfillSource = fs.readFileSync(new URL('../backfill_manager.js', import.meta.url), 'utf8');
+const promptSource = fs.readFileSync(new URL('../prompt_manager.js', import.meta.url), 'utf8');
 
 function extractBlock(source, marker) {
   const start = source.indexOf(marker);
@@ -93,6 +94,69 @@ test('指向冷行的命令使整批事务零写入', () => {
   assert.equal(sheet.r.length, 1);
   assert.equal(sheet.r[0][0], '旧事件');
   assert.equal(saves, 0);
+});
+
+test('已填写结束时间的主线行拒绝继续更新', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
+  sheet.ins({ 0: '20:00', 1: '22:35', 2: '[礼宾室]谈判结束' });
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]继续新事件' } }]);
+  assert.equal(result.success, false);
+  assert.match(result.conflicts.join('；'), /已有结束时间.*已封存/);
+  assert.equal(sheet.r[0][2], '[礼宾室]谈判结束');
+  assert.equal(saves, 0);
+});
+
+test('同一批先封存主线再更新同一 R 行时整批拒绝', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
+  sheet.ins({ 0: '20:00', 2: '[礼宾室]谈判进行中' });
+  sandbox.m = { get: index => index === 0 ? sheet : null, save() { throw new Error('冲突事务不应保存'); } };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([
+    { t: 'update', ti: 0, ri: 'R1', d: { 1: '22:35', 2: '[礼宾室]谈判结束' } },
+    { t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]开始另一事件' } }
+  ]);
+  assert.equal(result.success, false);
+  assert.equal(sheet.r[0][1] || '', '');
+  assert.equal(sheet.r[0][2], '[礼宾室]谈判进行中');
+});
+
+test('主线 updateRow 引入新地点时拒绝并要求另起一行', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
+  sheet.ins({ 0: '20:00', 2: '[礼宾室]谈判进行中' });
+  sandbox.m = { get: index => index === 0 ? sheet : null, save() { throw new Error('地点冲突事务不应保存'); } };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]开始讨论下一目标' } }]);
+  assert.equal(result.success, false);
+  assert.match(result.conflicts.join('；'), /发生地点切换.*必须另起一行/);
+  assert.equal(sheet.r[0][2], '[礼宾室]谈判进行中');
+});
+
+test('追加列忽略重复片段并吸收模型回传的完整新版', () => {
+  const { Sheet } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
+  sheet.ins({ 2: '[礼宾室]谈判开始' });
+  sheet.upd('R1', { 2: '[礼宾室]谈判开始' });
+  assert.equal(sheet.r[0][2], '[礼宾室]谈判开始');
+  sheet.upd('R1', { 2: '[礼宾室]谈判开始；[礼宾室]双方交换条件' });
+  assert.equal(sheet.r[0][2], '[礼宾室]谈判开始；[礼宾室]双方交换条件');
 });
 
 function lifecycleHarness({ failEmbedding = false } = {}) {
@@ -213,9 +277,13 @@ test('清表入口不依赖已删除的总结管理器并同步冷记忆索引',
   assert.doesNotMatch(cleanup, /slice\(0, -1\)\.forEach\(s => s\.clear\(\)\);\s*clearSummarizedMarks\(\)/);
 });
 
-test('追溯请求对主线事件概要追加地点强制规则', () => {
-  assert.match(backfillSource, /【主线地点强制·最高优先级】/);
-  assert.match(backfillSource, /“\[地点\]角色行为\/互动\/结果”/);
+test('追溯请求强制按事件分行并废止同日追加旧规则', () => {
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.3/);
+  assert.match(promptSource, /【主线事件分行协议·最高优先级】/);
+  assert.match(promptSource, /任何第1列“结束时间”非空的主线行都已经封存/);
+  assert.match(promptSource, /“同一天必须 updateRow”.*旧规则全部作废/);
+  assert.match(backfillSource, /MAIN_PLOT_SEGMENTATION_RULE/);
+  assert.match(backfillSource, /地点切换、目标切换、明显转场/);
 });
 
 test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', () => {
@@ -229,7 +297,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.2' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.3' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console

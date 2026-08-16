@@ -15,7 +15,7 @@
 
     // ===== 常量定义 =====
     const PROFILE_KEY = 'lvm_profiles';  // 预设数据存储键
-    const PROMPT_VERSION = 7.2;         // LEASE 组合方案版本号
+    const PROMPT_VERSION = 7.3;         // LEASE 组合方案版本号
     const DEFAULT_PROMPT_PROFILE_ID = 'default';
     const DEFAULT_PROMPT_PROFILE_NAME = 'LEASE专属';
     const DEFAULT_TABLE_PRESET_NAME = 'LEASE专属';
@@ -53,9 +53,23 @@
 【主线事件概要·地点强制规则】
 主线剧情（表0）的“事件概要”中，每个事件片段都必须写明实际发生地点，使用“[地点]角色行为/互动/结果”的格式；发生地点切换时必须在对应片段重新标注新地点。不得只写人物行为而省略地点。`;
 
+    const MAIN_PLOT_SEGMENTATION_RULE = `
+
+【主线事件分行协议·最高优先级】
+表0当前结构为：第0列“开始时间”、第1列“结束时间”、第2列“事件概要”。一行代表一个具有同一目标、连续时空和完整结果的事件单元，不代表一整天。
+1. 只有新剧情仍属于同一地点、同一目标、尚未结束的同一事件时，才允许 updateRow(0, "R编号", {2:"新增进展"})。
+2. 只要地点切换、主要目标切换、明显转场、长距离移动、上一事件已经得出结果，或准备开始另一件事，就必须 insertRow(0, {...}) 另起一行；即使仍是同一天、同一批楼层也必须分行。
+3. 任何第1列“结束时间”非空的主线行都已经封存，绝对禁止再次 updateRow。新剧情必须 insertRow。
+4. 事件在本批结束时，应在同一个 updateRow 中补充最后进展并填写第1列结束时间；封存后不得继续追加。
+5. “同一天必须 updateRow”“优先更新最后一行”“索引0代表最后一行”等旧规则全部作废。更新只能使用当前表格中真实可见的稳定 R 编号。
+6. 第2列“事件概要”的每段内容都必须以“[地点]”开头；updateRow 不得引入与该行现有地点不同的新地点。
+正确示例：updateRow(0, "R5", {1:"第1年·第1周·周四·22:35", 2:"[礼宾室]双方完成谈判并离开"}); insertRow(0, {0:"第1年·第1周·周四·22:40", 1:"", 2:"[车内]角色前往新地点并讨论下一目标"})。`;
+
     function ensureMainPlotLocationRule(prompt) {
-        const text = String(prompt || '').trim();
-        return text.includes('【主线事件概要·地点强制规则】') ? text : `${text}${MAIN_PLOT_LOCATION_RULE}`;
+        let text = String(prompt || '').trim();
+        if (!text.includes('【主线事件概要·地点强制规则】')) text += MAIN_PLOT_LOCATION_RULE;
+        if (!text.includes('【主线事件分行协议·最高优先级】')) text += MAIN_PLOT_SEGMENTATION_RULE;
+        return text;
     }
 
     // ========================================================================
@@ -2527,6 +2541,7 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
 
         // 版本信息
         PROMPT_VERSION: PROMPT_VERSION,
+        MAIN_PLOT_SEGMENTATION_RULE: MAIN_PLOT_SEGMENTATION_RULE,
 
         // ✅ 热更新功能
         checkUpdate: async () => false
