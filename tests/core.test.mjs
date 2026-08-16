@@ -164,3 +164,24 @@ test('向量记忆 UI 暴露三个分区和主表显隐锁定入口', () => {
   assert.match(css, /\.g-ops-wrap[\s\S]*?opacity:\s*1\s*!important/);
   assert.match(vectorSource, /const books = Object\.entries\(this\.library\)/);
 });
+
+test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', () => {
+  assert.match(indexSource, /LEASE-Vector-Memory\(\?:-main\)\?/);
+  assert.match(indexSource, /id:\s*'lvm-top-wrapper'/);
+  assert.match(indexSource, /id:\s*'lvm-top-btn'/);
+  assert.match(indexSource, /#top-settings-holder/);
+  assert.doesNotMatch(indexSource, /\$\('#gaigai-wrapper'\)\.remove/);
+  assert.match(indexSource, /LEASE-2473\/LEASE-Vector-Memory/);
+});
+
+test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
+  const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.1.1' : null }];
+  const sandbox = {
+    document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
+    console
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`globalThis.getExtensionPath = ${getPathSource}`, sandbox);
+  assert.equal(sandbox.getExtensionPath(), '/scripts/extensions/third-party/LEASE-Vector-Memory');
+});

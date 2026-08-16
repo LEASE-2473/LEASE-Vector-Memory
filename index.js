@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.1.0
+// LEASE Vector Memory v4.1.1
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.1.0 启动');
+    console.log('🚀 LEASE Vector Memory v4.1.1 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,14 +25,14 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.1.0';
+    const V = 'v4.1.1';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
     const CK = 'lvm_config';            // 通用配置存储键
     const CWK = 'lvm_col_widths';       // 列宽存储键
     const SMK = 'lvm_summarized';       // 已总结行标记存储键
-    const REPO_PATH = '';  // 私有魔改版不检查上游仓库更新
+    const REPO_PATH = 'LEASE-2473/LEASE-Vector-Memory';
 
     // ===== UI主题配置 =====
     let UI = { c: '#dfdcdcff', bc: '#ffffff', tc: '#000000ff', darkMode: false };
@@ -12036,8 +12036,16 @@
     async function ini() {
         // 1. Basic Dependency Check
         if (typeof $ === 'undefined' || typeof SillyTavern === 'undefined') {
-            console.log('⏳ [Gaigai] Waiting for dependencies...');
-            setTimeout(ini, 500);
+            console.log('⏳ [LEASE Vector Memory] 正在等待 SillyTavern 依赖...');
+            setTimeout(tryInit, 500);
+            return;
+        }
+
+        // GitHub 安装后的扩展可能比顶部工具栏更早完成脚本加载；等待真实挂载点再初始化。
+        const $topHolder = $('#top-settings-holder');
+        if (!$topHolder.length) {
+            console.log('⏳ [LEASE Vector Memory] 正在等待顶部工具栏...');
+            setTimeout(tryInit, 500);
             return;
         }
 
@@ -12106,11 +12114,11 @@
         console.log("📸 [创世快照] 已创建初始空状态快照 '-1'。");
 
         // ✨✨✨ 修改重点：创建完美融入顶部栏的按钮 ✨✨✨
-        $('#gaigai-wrapper').remove(); // 移除旧按钮防止重复
+        $('#lvm-top-wrapper').remove(); // 只清理本插件入口，不触碰旧插件按钮
 
         // 1. 创建容器 (模仿酒馆的 drawer 结构，这样间距和高度会自动对齐)
         const $wrapper = $('<div>', {
-            id: 'gaigai-wrapper',
+            id: 'lvm-top-wrapper',
             class: 'drawer' // 关键：使用 drawer 类名，让 CSS 自动继承主题样式
         });
 
@@ -12127,9 +12135,9 @@
 
         // 3. 创建图标 (原生结构：Font Awesome 类直接在 div 上)
         const $icon = $('<div>', {
-            id: 'gaigai-top-btn',
-            class: `drawer-icon fa-solid fa-table fa-fw interactable closedIcon${C.masterSwitch ? ' gg-enabled' : ''}`,
-            title: '记忆表格 (点击打开 | 长按开关)',
+            id: 'lvm-top-btn',
+            class: `drawer-icon fa-solid fa-brain fa-fw interactable closedIcon${C.masterSwitch ? ' gg-enabled' : ''}`,
+            title: 'LEASE Vector Memory（点击打开｜长按启用/休眠）',
             tabindex: '0'
         });
 
@@ -12156,9 +12164,9 @@
 
                 // 更新状态视觉反馈
                 if (C.masterSwitch) {
-                    $('#gaigai-top-btn').addClass('gg-enabled');
+                    $('#lvm-top-btn').addClass('gg-enabled');
                 } else {
-                    $('#gaigai-top-btn').removeClass('gg-enabled');
+                    $('#lvm-top-btn').removeClass('gg-enabled');
                 }
 
                 // 震动反馈 (手机端)
@@ -12236,7 +12244,7 @@
             $extBtn.after($wrapper);
             console.log('✅ 按钮已插入到扩展设置按钮之后');
         } else {
-            $('#top-settings-holder').append($wrapper);
+            $topHolder.append($wrapper);
             console.log('⚠️ 未找到扩展按钮，追加到工具栏末尾');
         }
         // ✨✨✨ 修改结束 ✨✨✨
@@ -12669,12 +12677,12 @@
             if (!src) continue;
 
             // 兼容原目录名、下载压缩包的 -main 后缀以及本地重命名目录。
-            if (/(?:ST-Memory-Context(?:-main)?|LEASE-Memory-Table)\/index\.js(?:[?#].*)?$/i.test(src)) {
+            if (/(?:ST-Memory-Context(?:-main)?|LEASE-Memory-Table|LEASE-Vector-Memory(?:-main)?)\/index\.js(?:[?#].*)?$/i.test(src)) {
                 return src.replace(/\/index\.js(?:[?#].*)?$/i, '');
             }
         }
 
-        console.error('❌ [Gaigai] 无法定位插件路径，依赖加载将失败！');
+        console.error('❌ [LEASE Vector Memory] 无法定位插件路径，依赖加载将失败！');
         return '';
     }
 
@@ -12683,6 +12691,10 @@
 
     // 轻量版加载链：不加载实时填表或普通世界书总结同步；保留手机消息适配与批量追溯。
     function loadLeanDependencies() {
+        if (!EXTENSION_PATH) {
+            console.error('❌ [LEASE Vector Memory] 扩展目录为空，停止依赖加载。请确认通过完整 Git 仓库安装。');
+            return;
+        }
         const modules = [
             { file: 'debug_manager.js', optional: true },
             { file: 'phone-adapter.js', optional: true },

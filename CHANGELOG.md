@@ -1,5 +1,14 @@
 # 更改日志
 
+## 2026-08-16 修复 GitHub 安装后顶部入口缺失 v4.1.1
+
+- **用户目标**：修复从新 GitHub 项目安装后，SillyTavern 顶部没有插件图标、无法打开插件页面的问题。
+- **主要修改**：确认 GitHub 安装目录名为 `LEASE-Vector-Memory`，而动态路径回退只识别旧 `ST-Memory-Context` 与本地 `LEASE-Memory-Table`，导致必需子模块加载失败且 `ini()` 从未执行。路径识别现兼容 `LEASE-Vector-Memory` 与 `-main`；空路径时明确停止并报错；初始化会等待顶部工具栏挂载点出现。顶部入口从会与旧插件冲突的 `gaigai-*` 改为独立 `lvm-top-wrapper / lvm-top-btn`，使用脑图标，且只清理自己的入口。恢复内置 GitHub 更新检查地址为 `LEASE-2473/LEASE-Vector-Memory`。
+- **修改的文件**：`index.js`、`manifest.json`、`package.json`、`tests/core.test.mjs`、`README.md`、`PROJECT_CONTEXT.md`、`CHANGELOG.md`。
+- **验证**：`npm test` 通过 10/10 项，其中动态执行路径定位函数确认 `/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.1.1` 能解析出正确目录；`npm run check` 通过；manifest 解析为 `lease_vector_memory / 4.1.1`。
+- **未完成事项**：推送后需要用户在 SillyTavern 扩展管理器更新并整页刷新，确认顶部脑图标出现并能打开主界面。
+- **已知风险与后续建议**：如果浏览器或 SillyTavern 缓存旧脚本，只点更新而不整页刷新仍可能继续运行 v4.1.0；更新后应执行强制刷新。旧插件仍建议停用，避免两套请求拦截同时运行。
+
 ## 2026-08-16 创建独立 GitHub 项目并公开发布
 
 - **用户目标**：把 LEASE Vector Memory 作为全新项目发布到 GitHub，便于在 SillyTavern 中通过 GitHub 安装和更新。
