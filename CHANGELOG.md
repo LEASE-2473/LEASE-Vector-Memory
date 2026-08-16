@@ -5,8 +5,8 @@
 - **用户目标**：修复本地 SillyTavern 更新至 v4.2.10 后，LEASE Vector Memory 顶部入口再次消失的问题。
 - **主要修改**：通过用户当前打开的 `127.0.0.1:8000` 页面确认插件脚本已加载，但初始化在主题函数中抛出 `ReferenceError: book_surface is not defined`，因此入口尚未创建就已中断。将旧总结代码清理后残留的 `book_surface` 引用替换为现行固定列不透明背景 `stickyColumnBg`；同时隔离主题应用异常，即使今后单条主题样式失败，插件仍会继续创建顶部入口并完成初始化。新增针对残留变量和初始化隔离的回归测试，版本升至 4.3.0。
 - **修改的文件**：`index.js`、`tests/core.test.mjs`、`manifest.json`、`package.json`、`README.md`、`PROJECT_CONTEXT.md`、`CHANGELOG.md`。
-- **验证**：浏览器只读诊断确认本地页面加载 `/scripts/extensions/third-party/LEASE-Vector-Memory/index.js`，控制台唯一阻断错误定位到 `thm()` 中的 `book_surface`；`npm test` 通过 27/27 项；`npm run check` 通过 6 个核心 JavaScript 语法检查。
-- **未完成事项**：发布后需在 SillyTavern 扩展管理器更新至 v4.3.0，并整页刷新本地页面，确认顶部入口恢复。
+- **验证**：浏览器诊断确认本地页面加载 `/scripts/extensions/third-party/LEASE-Vector-Memory/index.js`，控制台唯一阻断错误定位到 `thm()` 中的 `book_surface`；`npm test` 通过 27/27 项；`npm run check` 通过 6 个核心 JavaScript 语法检查。发布后已在本地扩展管理器仅更新 LEASE Vector Memory，整页刷新后管理器显示 `4.3.0`，`#lvm-top-wrapper` 与 `#lvm-top-btn` 均已创建且可见。
+- **未完成事项**：无。
 - **已知风险与后续建议**：更新后若没有整页刷新，浏览器仍可能继续运行已加载的 v4.2.10 脚本；必须刷新页面才能执行新初始化代码。
 
 ## 2026-08-17 内置向量化精细追溯提示词 v4.2.10
