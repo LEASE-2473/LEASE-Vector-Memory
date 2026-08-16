@@ -64,11 +64,11 @@
          * @returns {boolean}
          */
         _isMinimalLogMode() {
-            const runtimeFlag = window.Gaigai?.config_obj?.minimalLogMode;
+            const runtimeFlag = window.LeaseVectorMemory?.config_obj?.minimalLogMode;
             if (typeof runtimeFlag === 'boolean') return runtimeFlag;
 
             try {
-                const raw = localStorage.getItem('gg_config');
+                const raw = localStorage.getItem('lvm_config');
                 if (raw) {
                     const parsed = JSON.parse(raw);
                     if (typeof parsed?.minimalLogMode === 'boolean') {
@@ -202,8 +202,8 @@
 
             // 1. 最高优先级：直接从 localStorage 读取（最可靠的持久化存储）
             try {
-                const savedUI = localStorage.getItem('gg_ui');
-                console.log('[DebugManager] 📦 localStorage gg_ui:', savedUI ? '存在' : '不存在');
+                const savedUI = localStorage.getItem('lvm_ui');
+                console.log('[DebugManager] 📦 localStorage lvm_ui:', savedUI ? '存在' : '不存在');
                 if (savedUI) {
                     const parsed = JSON.parse(savedUI);
                     console.log('[DebugManager] 📦 parsed.darkMode =', parsed.darkMode);
@@ -216,16 +216,16 @@
                 console.warn('[DebugManager] ❌ 方法1失败: 读取 localStorage darkMode 失败:', e);
             }
 
-            // 2. 备用：从 window.Gaigai.ui.darkMode 读取
-            if (window.Gaigai && window.Gaigai.ui && typeof window.Gaigai.ui.darkMode === 'boolean') {
-                console.log('[DebugManager] ✅ 方法2: window.Gaigai.ui.darkMode =', window.Gaigai.ui.darkMode);
-                return window.Gaigai.ui.darkMode;
+            // 2. 备用：从 window.LeaseVectorMemory.ui.darkMode 读取
+            if (window.LeaseVectorMemory && window.LeaseVectorMemory.ui && typeof window.LeaseVectorMemory.ui.darkMode === 'boolean') {
+                console.log('[DebugManager] ✅ 方法2: window.LeaseVectorMemory.ui.darkMode =', window.LeaseVectorMemory.ui.darkMode);
+                return window.LeaseVectorMemory.ui.darkMode;
             }
-            console.log('[DebugManager] ⚠️ 方法2失败: window.Gaigai.ui.darkMode 不可用');
+            console.log('[DebugManager] ⚠️ 方法2失败: window.LeaseVectorMemory.ui.darkMode 不可用');
 
             // 3. 最后：通过颜色值推断（深色主题色通常是深色）
-            if (window.Gaigai && window.Gaigai.ui && window.Gaigai.ui.c) {
-                const color = window.Gaigai.ui.c.toLowerCase();
+            if (window.LeaseVectorMemory && window.LeaseVectorMemory.ui && window.LeaseVectorMemory.ui.c) {
+                const color = window.LeaseVectorMemory.ui.c.toLowerCase();
                 console.log('[DebugManager] 🎨 主题色:', color);
                 // 如果主题色是深色（如 #252525），则判定为夜间模式
                 if (color.startsWith('#') && color.length >= 7) {
@@ -251,7 +251,7 @@
          */
         async clearCache() {
             // 1. 显示确认对话框
-            const confirmed = await window.Gaigai.customConfirm(
+            const confirmed = await window.LeaseVectorMemory.customConfirm(
                 '⚠️ 即将清除所有本地缓存数据！\n\n' +
                 '这将重置：\n' +
                 '• 所有本地配置（API密钥、提示词等）\n' +
@@ -276,19 +276,19 @@
             // 2.1 收集所有需要删除的键
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && (key.startsWith('gg_') || key.startsWith('gai_'))) {
+                if (key && (key.startsWith('lvm_') || key.startsWith('gai_'))) {
                     keysToRemove.push(key);
                 }
             }
 
             // 2.2 删除特定的已知键（防止遗漏）
             const specificKeys = [
-                'gg_config',
-                'gg_api',
-                'gg_ui',
-                'gg_timestamp',
-                'gg_notice_ver',
-                'gg_profiles'
+                'lvm_config',
+                'lvm_api',
+                'lvm_ui',
+                'lvm_timestamp',
+                'lvm_notice_ver',
+                'lvm_profiles'
             ];
 
             specificKeys.forEach(key => {
@@ -318,7 +318,7 @@
                     { timeOut: 2000 }
                 );
             } else {
-                await window.Gaigai.customAlert(
+                await window.LeaseVectorMemory.customAlert(
                     `✅ 已清除 ${removedCount} 个缓存项\n\n页面即将刷新...`,
                     '清除成功'
                 );
@@ -339,13 +339,13 @@
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
                 localStorage: {},
-                gaigaiVersion: window.Gaigai?.VERSION || 'unknown'
+                gaigaiVersion: window.LeaseVectorMemory?.VERSION || 'unknown'
             };
 
-            // 收集所有 gg_ 和 gai_ 开头的键（但不包含敏感信息）
+            // 收集所有 lvm_ 和 gai_ 开头的键（但不包含敏感信息）
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && (key.startsWith('gg_') || key.startsWith('gai_'))) {
+                if (key && (key.startsWith('lvm_') || key.startsWith('gai_'))) {
                     // 排除敏感键
                     if (key.includes('api') || key.includes('key') || key.includes('token')) {
                         diagnostics.localStorage[key] = '[REDACTED]';
@@ -369,11 +369,11 @@
          * 用于调试和查看发送给 AI 的完整上下文
          */
         showLastRequest() {
-            const lastData = window.Gaigai.lastRequestData;
+            const lastData = window.LeaseVectorMemory.lastRequestData;
             if (!lastData || !lastData.chat) {
                 // ✨ 修复：调用共享的 customAlert，保持 UI 风格一致
-                if (window.Gaigai.customAlert) {
-                    window.Gaigai.customAlert('❌ 暂无记录！\n\n请先去发送一条消息，插件会自动捕获发送内容。', '🔍 探针数据为空');
+                if (window.LeaseVectorMemory.customAlert) {
+                    window.LeaseVectorMemory.customAlert('❌ 暂无记录！\n\n请先去发送一条消息，插件会自动捕获发送内容。', '🔍 探针数据为空');
                 } else {
                     alert('❌ 暂无记录！\n\n请先去发送一条消息，插件会自动捕获发送内容。');
                 }
@@ -381,11 +381,12 @@
             }
 
             // ⚠️ 使用健壮的夜间模式检测，避免引用过期问题
-            const UI = window.Gaigai.ui || { c: '#888888', tc: '#333', darkMode: false };
+            const UI = window.LeaseVectorMemory.ui || { c: '#888888', tc: '#333', darkMode: false };
 
-            const esc = window.Gaigai.esc || ((t) => t);
-            const pop = window.Gaigai.pop;
+            const esc = window.LeaseVectorMemory.esc || ((t) => t);
+            const pop = window.LeaseVectorMemory.pop;
             const chat = lastData.chat;
+            const injectionDebug = window.LeaseVectorMemory.lastInjectionDebug || {};
             let totalTokens = 0;
             let listHtml = '';
             const resolvePhoneSystemTags = (content) => {
@@ -453,9 +454,9 @@
                 : 'linear-gradient(135deg, ' + UI.c + 'EE, ' + UI.c + '99)';
 
             // 🎨 标记框背景色：夜间使用深色，白天使用主题色
-            const tagBg = isDark ? '#333333' : window.Gaigai.ui.c;
+            const tagBg = isDark ? '#333333' : window.LeaseVectorMemory.ui.c;
             // 🎨 标记框文字颜色：夜间白色，白天根据主题色亮度自动调整（优先使用 index.js 的文字颜色）
-            const tagColor = isDark ? '#fff' : (window.Gaigai.ui.tc || '#000');
+            const tagColor = isDark ? '#fff' : (window.LeaseVectorMemory.ui.tc || '#000');
 
             // 生成列表并计算 Token
             chat.forEach((msg, idx) => {
@@ -522,13 +523,13 @@
                             ${tokens} TK
                         </div>
                     </summary>
-                    <div class="g-probe-content" style="padding:10px; font-size:12px; line-height:1.6; color:${window.Gaigai.ui.tc}; border-top:1px solid ${borderColor}; white-space:pre-wrap; font-family:'Segoe UI', monospace; word-break:break-word; max-height: 500px; overflow-y: auto; background: ${contentBg};">${esc(content)}</div>
+                    <div class="g-probe-content" style="padding:10px; font-size:12px; line-height:1.6; color:${window.LeaseVectorMemory.ui.tc}; border-top:1px solid ${borderColor}; white-space:pre-wrap; font-family:'Segoe UI', monospace; word-break:break-word; max-height: 500px; overflow-y: auto; background: ${contentBg};">${esc(content)}</div>
                 </details>`;
             });
 
             const h = `
             <div class="g-p" style="padding:15px; height:100%; display:flex; flex-direction:column;">
-                <div style="flex:0 0 auto; background: ${probeHeaderBg}; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.25); color:${window.Gaigai.ui.tc}; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+                <div style="flex:0 0 auto; background: ${probeHeaderBg}; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.25); color:${window.LeaseVectorMemory.ui.tc}; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                         <div>
                             <div style="font-size:12px; opacity:0.9;">Total Tokens</div>
@@ -539,9 +540,15 @@
                             <div style="font-size:18px; font-weight:bold;">${chat.length} 条</div>
                         </div>
                     </div>
+                    <div style="font-size:11px;line-height:1.6;margin-bottom:10px;padding:8px;border-radius:5px;background:rgba(0,0,0,.12);">
+                        最终插入索引：${Number.isInteger(injectionDebug.index) ? injectionDebug.index : '变量/向量探针'} ｜
+                        角色：${esc(injectionDebug.role || 'system')} ｜
+                        热行：${injectionDebug.hotRows || 0} ｜
+                        冷召回：${window.LeaseVectorMemory.lastColdRecallCount || 0}
+                    </div>
                     <div style="position:relative;">
                         <input type="text" id="gai-probe-search-input" placeholder="搜索..."
-                            style="width:100%; padding:8px 10px; padding-left:30px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; background:rgba(0,0,0,0.2); color:${window.Gaigai.ui.tc}; font-size:12px; outline:none;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                            style="width:100%; padding:8px 10px; padding-left:30px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; background:rgba(0,0,0,0.2); color:${window.LeaseVectorMemory.ui.tc}; font-size:12px; outline:none;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                         <i class="fa-solid fa-search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.6); font-size:12px;"></i>
                     </div>
                 </div>
@@ -573,13 +580,13 @@
                             // 2. 清空搜索时：恢复默认状态
                             if (!val) {
                                 $details.show().removeAttr('open').css('border', `1px solid ${borderColor}`);
-                                $content.html(window.Gaigai.esc(rawText)); // 恢复无高亮的转义文本
+                                $content.html(window.LeaseVectorMemory.esc(rawText)); // 恢复无高亮的转义文本
                                 return;
                             }
 
                             // 3. 匹配逻辑
                             if (rawText.toLowerCase().includes(lowerVal)) {
-                                $details.show().attr('open', true).css('border', `2px solid ${window.Gaigai.ui.c}`);
+                                $details.show().attr('open', true).css('border', `2px solid ${window.LeaseVectorMemory.ui.c}`);
 
                                 // 记录第一个匹配项
                                 if (!firstMatch) {
@@ -597,10 +604,10 @@
                                 const highlightedHtml = parts.map(part => {
                                     if (part.toLowerCase() === lowerVal) {
                                         // 命中部分：加高亮
-                                        return `<span style="${highlightStyle}">${window.Gaigai.esc(part)}</span>`;
+                                        return `<span style="${highlightStyle}">${window.LeaseVectorMemory.esc(part)}</span>`;
                                     } else {
                                         // 普通部分：仅转义
-                                        return window.Gaigai.esc(part);
+                                        return window.LeaseVectorMemory.esc(part);
                                     }
                                 }).join('');
 
@@ -635,12 +642,12 @@
          */
         async showRescueUI() {
             // 访问全局变量
-            const m = window.Gaigai.m;
-            const UI = window.Gaigai.ui;
-            const shw = window.Gaigai.shw;
-            const customAlert = window.Gaigai.customAlert;
-            const customConfirm = window.Gaigai.customConfirm;
-            const summarizedRows = window.Gaigai.summarizedRows;
+            const m = window.LeaseVectorMemory.m;
+            const UI = window.LeaseVectorMemory.ui;
+            const shw = window.LeaseVectorMemory.shw;
+            const customAlert = window.LeaseVectorMemory.customAlert;
+            const customConfirm = window.LeaseVectorMemory.customConfirm;
+            const summarizedRows = window.LeaseVectorMemory.summarizedRows;
 
             // === 🌙 变量定义区 ===
             // ⚠️ 使用健壮的 getDarkMode() 方法获取准确状态
@@ -661,7 +668,7 @@
             let backups = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key.startsWith('gg_data_')) {
+                if (key.startsWith('lvm_data_')) {
                     try {
                         const raw = localStorage.getItem(key);
                         const d = JSON.parse(raw);
@@ -744,11 +751,11 @@
                 function () { $(this).css('background', 'transparent'); }
             );
 
-            // ✨ 修复：鼠标移出时，恢复的颜色必须是 btnDefColor，而不是 window.Gaigai.ui.c
+            // ✨ 修复：鼠标移出时，恢复的颜色必须是 btnDefColor，而不是 window.LeaseVectorMemory.ui.c
             $box.find('.restore-item-btn').hover(
                 function () {
                     // 鼠标悬停：背景变主题色，字变白
-                    $(this).css({ background: window.Gaigai.ui.c, color: '#fff', border: `1px solid ${window.Gaigai.ui.c}` });
+                    $(this).css({ background: window.LeaseVectorMemory.ui.c, color: '#fff', border: `1px solid ${window.LeaseVectorMemory.ui.c}` });
                 },
                 function () {
                     // 鼠标移出：背景变透明，字变回默认色(夜间为白，白天为主题色)
@@ -762,7 +769,7 @@
                         if (target.data.d[i]) sheet.from(target.data.d[i]);
                         else sheet.clear();
                     });
-                    if (target.data.summarized) window.Gaigai.summarizedRows = target.data.summarized;
+                    if (target.data.summarized) window.LeaseVectorMemory.summarizedRows = target.data.summarized;
                     m.save(true, true); // 数据恢复立即保存
                     shw();
                     $overlay.remove();
@@ -832,7 +839,7 @@
                                 <span style="font-weight:bold; color:${typeColor}; font-size:12px;">${typeIcon} ${log.type.toUpperCase()}</span>
                                 <span style="font-size:11px; opacity:0.6; color:${txtColor};">${log.timestamp}</span>
                             </div>
-                            <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-family:monospace; font-size:13px; color:${txtColor};">${window.Gaigai.esc(displayMessage)}</pre>
+                            <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-family:monospace; font-size:13px; color:${txtColor};">${window.LeaseVectorMemory.esc(displayMessage)}</pre>
                         </div>
                     `;
                 }).join('');
@@ -841,18 +848,18 @@
             const h = `
                 <style>
                     /* 自定义滚动条样式 */
-                    #gg_log_container::-webkit-scrollbar {
+                    #lvm_log_container::-webkit-scrollbar {
                         width: 8px;
                     }
-                    #gg_log_container::-webkit-scrollbar-track {
+                    #lvm_log_container::-webkit-scrollbar-track {
                         background: ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
                         border-radius: 4px;
                     }
-                    #gg_log_container::-webkit-scrollbar-thumb {
+                    #lvm_log_container::-webkit-scrollbar-thumb {
                         background: ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'};
                         border-radius: 4px;
                     }
-                    #gg_log_container::-webkit-scrollbar-thumb:hover {
+                    #lvm_log_container::-webkit-scrollbar-thumb:hover {
                         background: ${isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.3)'};
                     }
 
@@ -906,25 +913,25 @@
                         <button class="log-filter-tab tab-info" data-filter="info">ℹ️ 信息</button>
                     </div>
 
-                    <div id="gg_log_container" style="flex:1; overflow-y:auto; padding:10px; background:${bgColor};">
+                    <div id="lvm_log_container" style="flex:1; overflow-y:auto; padding:10px; background:${bgColor};">
                         ${renderLogs('all')}
                     </div>
 
                     <div style="flex-shrink:0; padding:10px; background:${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}; border-top:${borderColor}; display:flex; gap:8px;">
-                        <button id="gg_copy_logs_btn" style="flex:1; padding:10px; background:${window.Gaigai.ui.c}; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">📋 复制</button>
-                        <button id="gg_clear_logs_btn" style="flex:1; padding:10px; background:#dc3545; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">🗑️ 清空</button>
-                        <button id="gg_refresh_logs_btn" style="flex:1; padding:10px; background:#17a2b8; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">🔄 刷新</button>
+                        <button id="lvm_copy_logs_btn" style="flex:1; padding:10px; background:${window.LeaseVectorMemory.ui.c}; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">📋 复制</button>
+                        <button id="lvm_clear_logs_btn" style="flex:1; padding:10px; background:#dc3545; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">🗑️ 清空</button>
+                        <button id="lvm_refresh_logs_btn" style="flex:1; padding:10px; background:#17a2b8; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">🔄 刷新</button>
                     </div>
                 </div>
             `;
 
-            window.Gaigai.pop('📜 日志查看器', h, true);
+            window.LeaseVectorMemory.pop('📜 日志查看器', h, true);
 
             // 事件绑定
             setTimeout(() => {
                 // 📌 默认滚动到底部，显示最新日志
                 const scrollToBottom = () => {
-                    const $container = $('#gg_log_container');
+                    const $container = $('#lvm_log_container');
                     if ($container.length) {
                         $container.scrollTop($container[0].scrollHeight);
                     }
@@ -941,12 +948,12 @@
                     $(this).addClass('active');
 
                     // 重新渲染日志列表
-                    $('#gg_log_container').html(renderLogs(filterType));
+                    $('#lvm_log_container').html(renderLogs(filterType));
                     scrollToBottom();
                 });
 
                 // 复制日志
-                $('#gg_copy_logs_btn').on('click', () => {
+                $('#lvm_copy_logs_btn').on('click', () => {
                     const logText = this.logs.map(log => `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
 
                     // 定义兼容旧浏览器的复制函数
@@ -967,13 +974,13 @@
                             const successful = document.execCommand('copy');
                             if (successful) {
                                 if (typeof toastr !== 'undefined') toastr.success('✅ 日志已复制 (兼容模式)');
-                                else window.Gaigai.customAlert('✅ 日志已复制', '成功');
+                                else window.LeaseVectorMemory.customAlert('✅ 日志已复制', '成功');
                             } else {
                                 throw new Error('Fallback copy failed');
                             }
                         } catch (err) {
                             console.error('无法复制:', err);
-                            window.Gaigai.customAlert('❌ 复制失败，请手动长按日志内容复制', '错误');
+                            window.LeaseVectorMemory.customAlert('❌ 复制失败，请手动长按日志内容复制', '错误');
                         }
                         document.body.removeChild(textArea);
                     };
@@ -982,7 +989,7 @@
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(logText).then(() => {
                             if (typeof toastr !== 'undefined') toastr.success('✅ 日志已复制到剪贴板');
-                            else window.Gaigai.customAlert('✅ 日志已复制到剪贴板', '成功');
+                            else window.LeaseVectorMemory.customAlert('✅ 日志已复制到剪贴板', '成功');
                         }).catch(err => {
                             console.warn('标准复制API失败，尝试兼容模式:', err);
                             fallbackCopyTextToClipboard(logText);
@@ -994,11 +1001,11 @@
                 });
 
                 // 清空日志
-                $('#gg_clear_logs_btn').on('click', async () => {
-                    const confirmed = await window.Gaigai.customConfirm('确定要清空所有日志吗？', '清空确认');
+                $('#lvm_clear_logs_btn').on('click', async () => {
+                    const confirmed = await window.LeaseVectorMemory.customConfirm('确定要清空所有日志吗？', '清空确认');
                     if (confirmed) {
                         this.logs = [];
-                        $('#gg_log_container').html('<div style="text-align:center; padding:40px; opacity:0.5; color:' + txtColor + ';">暂无日志记录</div>');
+                        $('#lvm_log_container').html('<div style="text-align:center; padding:40px; opacity:0.5; color:' + txtColor + ';">暂无日志记录</div>');
                         if (typeof toastr !== 'undefined') {
                             toastr.success('✅ 日志已清空');
                         }
@@ -1006,8 +1013,8 @@
                 });
 
                 // 刷新日志
-                $('#gg_refresh_logs_btn').on('click', () => {
-                    $('#gg_log_container').html(renderLogs(currentFilter));
+                $('#lvm_refresh_logs_btn').on('click', () => {
+                    $('#lvm_log_container').html(renderLogs(currentFilter));
                     scrollToBottom();
                     if (typeof toastr !== 'undefined') {
                         toastr.success('✅ 日志已刷新');
@@ -1017,10 +1024,10 @@
         }
     }
 
-    // 挂载到 window.Gaigai
-    if (!window.Gaigai) {
-        window.Gaigai = {};
+    // 挂载到 window.LeaseVectorMemory
+    if (!window.LeaseVectorMemory) {
+        window.LeaseVectorMemory = {};
     }
-    window.Gaigai.DebugManager = new DebugManager();
-    console.log('✅ [DebugManager] 已挂载到 window.Gaigai.DebugManager');
+    window.LeaseVectorMemory.DebugManager = new DebugManager();
+    console.log('✅ [DebugManager] 已挂载到 window.LeaseVectorMemory.DebugManager');
 })();
