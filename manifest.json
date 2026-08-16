@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "id": "st_memory_table",
+  "display_name": "LEASE Memory Context",
+  "version": "3.3.3",
+  "description": "轻量记忆表格总结、分片向量化与语义检索",
+  "author": "LEASE（基于 gaigai315 / Gaigai Team 的 ST-Memory-Context）",
+  "homepage": "https://github.com/LEASE-2473/ST-Memory-Context",
+  "auto_update": false,
+  "requires": [],
+  "js": "index.js",
+  "css": "style.css"
+}
