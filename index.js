@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.6
+// LEASE Vector Memory v4.2.7
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.6 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.7 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.6';
+    const V = 'v4.2.7';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -1147,7 +1147,7 @@
                             // 修改：同时备份名字和数据
                             backupData.push({
                                 n: sheet.n,
-                                r: JSON.parse(JSON.stringify(sheet.json().r))
+                                data: JSON.parse(JSON.stringify(sheet.json()))
                             });
                             console.log(`💾 [数据备份] 表${index} "${sheet.n}" 备份了 ${sheet.r.length} 行数据`);
                         }
@@ -1171,7 +1171,8 @@
                     const currentTable = this.s[i];
                     const match = backupData.find(b => b.n === currentTable.n);
                     if (match) {
-                        currentTable.from({ r: match.r });
+                        // 保留完整 v2 状态，尤其是 nextRowId，避免结构/方案切换后复用已删除的 R 编号。
+                        currentTable.from(match.data);
                     } else {
                         currentTable.r = [];
                     }
@@ -3042,24 +3043,29 @@
     }
 
     function exe(cs, options = {}) {
-        // ✅ Strict Sequential Execution: Respects AI's intended order
-        // If AI outputs "insertRow → updateRow", it means "insert THEN update the new row"
-        // If AI outputs "updateRow → insertRow", it means "update old row THEN insert new row"
-
-        // 空表初始化兼容：模型偶尔把“系统下一次将分配的 R 编号”误认为已存在行。
-        // 仅当目标表在事务开始时确实为空时，把任何 update 安全转成 insert；
-        // 非空表中的不存在 R 编号仍严格整批拒绝。
-        cs.forEach(cm => {
-            const sh = m.get(cm.ti);
-            if (cm.t === 'update' && sh && sh.r.length === 0) {
-                console.warn(`⚠️ [空表初始化兼容] 表${cm.ti} ${cm.ri} updateRow 已转换为 insertRow`);
-                cm.t = 'insert';
-                cm.ri = null;
-            }
-        });
-
+        // 在虚拟表状态中按原始顺序校验，保证校验阶段不修改调用方命令，也能识别同批新增的 R 行。
+        const normalizedCommands = Array.isArray(cs)
+            ? cs.map(cm => ({ ...cm, d: cm?.d && typeof cm.d === 'object' ? { ...cm.d } : cm?.d }))
+            : [];
+        const transactionStates = new Map();
+        const getTransactionState = (tableIndex, sheet) => {
+            if (transactionStates.has(tableIndex)) return transactionStates.get(tableIndex);
+            const rows = new Map();
+            sheet.r.forEach(row => {
+                const meta = sheet._ensureMeta(row).__lvm;
+                rows.set(meta.id, { cold: meta.cold, locked: meta.locked });
+            });
+            const state = {
+                initiallyEmpty: rows.size === 0,
+                rows,
+                nextRowId: Math.max(1, Number.parseInt(sheet.nextRowId, 10) || 1),
+                hasPriorMutation: false
+            };
+            transactionStates.set(tableIndex, state);
+            return state;
+        };
         const conflicts = [];
-        for (const cm of cs) {
+        for (const cm of normalizedCommands) {
             const sh = m.get(cm.ti);
             if (!sh) {
                 conflicts.push(`表${cm.ti}不存在`);
@@ -3069,19 +3075,43 @@
                 conflicts.push(`表${cm.ti}“手工记忆”禁止 AI 写入`);
                 continue;
             }
+            const state = getTransactionState(cm.ti, sh);
+            if (cm.t === 'insert') {
+                const insertedId = `R${state.nextRowId++}`;
+                state.rows.set(insertedId, { cold: false, locked: false });
+                state.hasPriorMutation = true;
+                continue;
+            }
             if (cm.t === 'update' || cm.t === 'delete') {
+                const rowId = String(cm.ri || '').toUpperCase();
+                cm.ri = rowId;
+
+                // 兼容更新前已清空但仍残留未来编号的会话。只转换空表事务的首个误用 update；
+                // 一旦同批已经新增了行，后续 update 必须命中虚拟状态中的真实 R 编号。
+                if (cm.t === 'update' && state.initiallyEmpty && state.rows.size === 0 && !state.hasPriorMutation) {
+                    const insertedId = `R${state.nextRowId++}`;
+                    console.warn(`⚠️ [空表初始化兼容] 表${cm.ti} ${cm.ri} updateRow 已转换为 insertRow (${insertedId})`);
+                    cm.t = 'insert';
+                    cm.ri = null;
+                    state.rows.set(insertedId, { cold: false, locked: false });
+                    state.hasPriorMutation = true;
+                    continue;
+                }
                 if (!/^R\d+$/.test(String(cm.ri || ''))) {
                     conflicts.push(`表${cm.ti}缺少有效 R 编号`);
                     continue;
                 }
-                const rowIndex = sh.indexOfId(cm.ri);
-                if (rowIndex < 0) {
+                const meta = state.rows.get(cm.ri);
+                if (!meta) {
                     conflicts.push(`表${cm.ti} ${cm.ri}不存在`);
                     continue;
                 }
-                const meta = sh._ensureMeta(sh.r[rowIndex]).__lvm;
                 if (meta.cold) conflicts.push(`表${cm.ti} ${cm.ri}为绿色冷行`);
                 if (meta.locked) conflicts.push(`表${cm.ti} ${cm.ri}已锁定`);
+                if (!meta.cold && !meta.locked && cm.t === 'delete') {
+                    state.rows.delete(cm.ri);
+                    state.hasPriorMutation = true;
+                }
             }
         }
         if (conflicts.length > 0) {
@@ -3095,7 +3125,7 @@
         // 全部验证通过后才开始写入，保证整批原子性。
         const modifiedTables = new Set();
 
-        cs.forEach(cm => {
+        normalizedCommands.forEach(cm => {
             const sh = m.get(cm.ti);
             if (!sh) return;
             if (cm.t === 'update' && cm.ri !== null) sh.upd(cm.ri, cm.d);
@@ -8875,7 +8905,7 @@
 
         const h = `
     <div class="g-p">
-        <h4>🤖 AI 总结配置</h4>
+        <h4>🤖 批量填表 API 配置</h4>
 
         <fieldset style="border:1px solid #ddd; padding:10px; border-radius:4px; margin-bottom:12px;">
             <legend style="font-size:11px; font-weight:600;">🚀 API 模式</legend>
@@ -8961,7 +8991,7 @@
         </div>
     </div>`;
 
-        pop('🤖 AI总结配置', h, true);
+        pop('🤖 批量填表 API 配置', h, true);
         window.isEditingConfig = true; // 标记开始编辑配置，防止后台同步覆盖用户输入
 
         setTimeout(() => {

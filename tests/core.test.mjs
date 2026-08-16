@@ -40,6 +40,13 @@ function loadSheetClass(context = {}) {
   return { Sheet: sandbox.Sheet, sandbox };
 }
 
+function loadManagerClasses() {
+  const sandbox = { window: {}, console, DEFAULT_TABLES: [] };
+  vm.createContext(sandbox);
+  vm.runInContext(`globalThis.S = ${extractBlock(indexSource, 'class S ')}; globalThis.M = ${extractBlock(indexSource, 'class M ')}`, sandbox);
+  return { Sheet: sandbox.S, Manager: sandbox.M };
+}
+
 test('稳定 R 编号删除、移动和 v2 往返后不漂移', () => {
   const { Sheet } = loadSheetClass();
   const sheet = new Sheet('主线剧情', ['#日期', '事件']);
@@ -54,6 +61,21 @@ test('稳定 R 编号删除、移动和 v2 往返后不漂移', () => {
   restored.from(saved);
   assert.equal(restored.r[restored.indexOfId('R10')][1], '事件10');
   assert.equal(restored.ins({ 1: '新事件' }), 'R11');
+});
+
+test('切换表结构保留已删除高编号之后的 nextRowId', () => {
+  const { Sheet, Manager } = loadManagerClasses();
+  const manager = new Manager();
+  const sheet = new Sheet('主线剧情', ['事件']);
+  for (let i = 1; i <= 10; i++) sheet.ins({ 0: `事件${i}` });
+  for (let i = 2; i <= 10; i++) sheet.del(`R${i}`);
+  assert.equal(sheet.nextRowId, 11);
+  manager.s = [sheet];
+
+  manager.initTables([{ n: '主线剧情', c: ['事件', '#备注'] }], true);
+
+  assert.equal(manager.s[0].nextRowId, 11);
+  assert.equal(manager.s[0].ins({ 0: '切换方案后的新事件' }), 'R11');
 });
 
 test('批量可见文本排除冷行、锁定行和手工记忆', () => {
@@ -182,6 +204,57 @@ test('空表初始化时将任意误用的未来 R 编号安全转换为新增',
   assert.equal(saves, 1);
 });
 
+test('空表事务按顺序执行 insert 后 update，且校验不修改原命令', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const commands = [
+    { t: 'insert', ti: 0, ri: null, d: { 0: '10:00', 2: '[礼宾室]谈判开始' } },
+    { t: 'update', ti: 0, ri: 'R1', d: { 1: '10:30', 2: '[礼宾室]谈判结束' } }
+  ];
+  const original = structuredClone(commands);
+
+  assert.equal(sandbox.exe(commands, { validateOnly: true }).success, true);
+  assert.deepEqual(commands, original);
+  assert.equal(sandbox.exe(commands).success, true);
+  assert.equal(sheet.r.length, 1);
+  assert.equal(sheet.r[0].__lvm.id, 'R1');
+  assert.equal(sheet.r[0][1], '10:30');
+  assert.match(sheet.r[0][2], /谈判开始.*谈判结束/);
+  assert.equal(saves, 1);
+});
+
+test('空表事务新增后删除的 R 行不能在同批被再次更新', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('主线剧情', ['事件概要']);
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const commands = [
+    { t: 'insert', ti: 0, ri: null, d: { 0: '临时事件' } },
+    { t: 'delete', ti: 0, ri: 'R1', d: {} },
+    { t: 'update', ti: 0, ri: 'R1', d: { 0: '不应复活' } }
+  ];
+
+  const result = sandbox.exe(commands);
+
+  assert.equal(result.success, false);
+  assert.match(result.conflicts.join('；'), /R1不存在/);
+  assert.equal(sheet.r.length, 0);
+  assert.equal(sheet.nextRowId, 1);
+  assert.equal(saves, 0);
+});
+
 test('明确清表同时重置稳定行编号，普通删除仍不复用编号', () => {
   const { Sheet } = loadSheetClass();
   const sheet = new Sheet('角色状态', ['#角色名']);
@@ -294,6 +367,8 @@ test('向量记忆 UI 合并冷热与 API，并精简主表操作', () => {
   assert.doesNotMatch(indexSource, /class="lvm-row-order"/);
   assert.match(css, /\.g-ops-wrap[\s\S]*?opacity:\s*1\s*!important/);
   assert.match(vectorSource, /const books = Object\.entries\(this\.library\)/);
+  assert.match(indexSource, /<h4>🤖 批量填表 API 配置<\/h4>/);
+  assert.doesNotMatch(indexSource, /<h4>🤖 AI 总结配置<\/h4>/);
 });
 
 test('来源区间固定列具有明确裁剪宽度和不透明主题背景', () => {
