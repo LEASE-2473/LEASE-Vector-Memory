@@ -15,7 +15,7 @@
 
     // ===== 常量定义 =====
     const PROFILE_KEY = 'lvm_profiles';  // 预设数据存储键
-    const PROMPT_VERSION = 7.4;         // LEASE 组合方案版本号
+    const PROMPT_VERSION = 7.5;         // LEASE 组合方案版本号
     const DEFAULT_PROMPT_PROFILE_ID = 'default';
     const DEFAULT_PROMPT_PROFILE_NAME = 'LEASE专属';
     const DEFAULT_TABLE_PRESET_NAME = 'LEASE专属';
@@ -340,7 +340,7 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
     // LEASE 组合方案：表格结构与提示词联动
     // ========================================================================
 
-    const LEGACY_LEASE_BACKFILL_PROMPT = decodeBuiltinPrompt([
+    const LEASE_BACKFILL_PROMPT_BASELINE = decodeBuiltinPrompt([
         '8J+UtPCflLTwn5S05Y6G5Y+y6K6w5b2V5aGr6KGo5oyH5Y2X8J+UtPCflLTwn5S0CgrjgJDku7vliqHouqvku73jgJEK5L2g546w5Zyo5aSE5LqO5Y6G5Y+y',
         '6KGl5YWo5qih5byP44CC5L2g55qE5ZSv5LiA5Lu75Yqh5piv6K+75Y+W5b6F5aSE55CG55qEIFVzZXIvQXNzaXN0YW50IOWOhuWPsua2iOaBr++8jOaKiuWw',
         'muacquW9kuaho+eahOaWsOS6i+WunuWGmeWFpeiusOW/huihqOagvOOAglN5c3RlbSDmtojmga/kuK3nmoTliY3mg4Xmj5DopoHjgIHlvZPliY3ooajmoLzn',
@@ -448,47 +448,35 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
         'i+S7tuOAgg==',
     ].join(''));
 
-    // v4 稳定行架构的精简默认提示词。旧 Base64 正文仅保留用于历史审计，禁止再作为运行时默认值。
-    const LEASE_BACKFILL_PROMPT = `你是 LEASE Vector Memory 的结构化记忆记录员。只读取待处理聊天，并依据当前表格状态输出增量填表命令。
+    // 用户长期实测的“新版-backfillPrompt.txt”是唯一正文基线。
+    // Vector 版只做稳定 R 编号、冷热隔离和手工记忆表所必需的机械迁移，
+    // 不再自行缩写或重写证据边界、时间轴、表格职责及填表判断规则。
+    function migrateLeaseBackfillPrompt(source) {
+        const migrated = String(source || '').trim()
+            .replace('System 消息中的前情提要、当前表格状态和已有总结只用于判断重复与延续', 'System 消息中的前情提要和当前表格状态只用于判断重复与延续')
+            .replace('已存在于前情提要、记忆总结或当前表格中的事实不得重复新增', '已存在于前情提要或当前表格中的事实不得重复新增')
+            .replace('表7 记忆总结\n- 历史补全模式严禁写入表7。该表只由“从表格总结”功能生成。', '表7 手工记忆\n- 历史补全模式严禁写入表7。该表只允许用户手工编辑；白色热行可注入日常剧情，绿色冷行仅参与向量召回。')
+            .replace('输出前必须扫描当前表格状态并找到真实行索引。', '输出前必须扫描当前表格状态并找到真实稳定 R 编号。')
+            .replace('若同一次输出既更新旧行又向同一表头部插入新行，先执行该表的 updateRow，再执行 insertRow，避免插入导致旧索引后移。', '稳定 R 编号不会因新增、删除或排序而改变；同一次输出可按剧情发生顺序排列 updateRow 与 insertRow。')
+            .replace('所有表格、行号和列号必须使用数字索引，不得使用字段英文名。', '表号和列号使用数字；updateRow/deleteRow 的行号必须使用当前表格状态中真实显示并带引号的稳定 R 编号，不得使用数组下标或字段英文名。')
+            .replace('updateRow(0, 0, {1:', 'updateRow(0, "R1", {1:')
+            .replace('updateRow(2, 3, {3:', 'updateRow(2, "R4", {3:')
+            .replace('updateRow(5, 0, {2:', 'updateRow(5, "R1", {2:')
+            .replace('并使用显示的真实行索引。', '并使用显示的真实稳定 R 编号。');
 
-【数据边界】
-1. System 中的当前表格状态是已记录资料，只用于判断是否已存在，禁止重复抄写。
-2. User/Assistant 提供的待处理聊天才是本批新增信息来源；不得补写文本中没有发生的内容。
-3. 每张表独立判断。表格为空、当前状态没有任何 [R数字] 行时，只能 insertRow，绝对禁止 updateRow/deleteRow。
+        const vectorMigrationRules = `
 
-【稳定行命令】
-- 新增：insertRow(表号, {列号:"值"})；系统自动分配从 R1 开始且永不复用的稳定 ID。
-- 更新：updateRow(表号, "当前状态中真实存在的R编号", {列号:"本次变化"})。
-- 删除：deleteRow(表号, "当前状态中真实存在的R编号")。
-- R0 永远不存在。禁止数字数组下标、禁止猜测不可见 R 编号、禁止更新绿色冷行/锁定行/手工记忆表。
-- 带 # 的列为覆盖列，更新时写当前完整值；不带 # 的列为追加列，只写本批真正新增且尚未记录的片段，不要回传旧全文。
+【LEASE Vector Table 迁移规则·最高优先级】
+1. 新增行只使用 insertRow(表号, {列号:"值"})，稳定 R 编号由系统自动生成，模型不得自行指定。
+2. 更新行使用 updateRow(表号, "R编号", {列号:"本次变化"})；删除行使用 deleteRow(表号, "R编号")。R 编号必须真实存在于本次“当前表格状态”中。
+3. R0 和数字数组下标都不是合法行号。空表只能 insertRow；不得猜测未显示或未来才会生成的 R 编号。
+4. 批量填表只会展示未锁定的白色热行。绿色冷行、锁定热行和手工记忆行对你不可见且绝对禁止更新或删除。
+5. 带 # 的列为覆盖列；不带 # 的列为追加列。追加列只写本批新增内容，不得重复回传旧全文。`;
 
-【主线剧情：按事件分行】
-表0列为：0开始时间、1结束时间、2事件概要。一行是同一地点、同一目标、连续发展且尚未结束的一个事件，不是一整天。
-- 仅当新剧情仍属于同一地点、同一目标、尚未结束的同一事件时，才 updateRow 追加第2列。
-- 地点切换、目标切换、明显转场、长距离移动、事件得出结果或开始另一件事时，必须先结束旧行（若需），再 insertRow 新行；即使同一天、同一批楼层也必须分行。
-- 第1列结束时间非空的主线行已封存，绝对禁止再次 updateRow。
-- 事件概要每段使用“[地点]角色行为/互动/结果”，必须写清实际参与者、原因、关键经过与结果。
+        return ensureMainPlotLocationRule(migrated + vectorMigrationRules);
+    }
 
-【其他表】
-- 表1支线追踪：同一长期支线使用同一行；全新且独立的支线才新增。已完成/失败后若出现不同支线，另起行。
-- 角色状态、人物档案、人物关系、世界设定、物品追踪、约定：先扫描真实 R 行。相同实体存在则更新对应 R；不存在则 insertRow。
-- 人物关系以无序角色对为唯一键；物品以物品名为唯一键；角色类表以角色名为唯一键。
-- 手工记忆表禁止 AI 写入。
-
-【输出格式】
-只输出一个 Memory 块，不要解释、Markdown 或 JSON：
-<Memory><!--
-insertRow(0, {0:"开始时间", 1:"", 2:"[地点]新事件"})
-updateRow(2, "R3", {1:"当前完整状态"})
---></Memory>
-若本批没有任何应记录的新事实，输出：<Memory><!-- --></Memory>
-
-【表格结构】
-{{TABLE_DEFINITIONS}}
-
-【当前表格状态】
-请读取请求中紧邻的“当前表格状态”System 消息，只使用其中真实显示的稳定 R 编号；空表必须新增，禁止制造 R0。`;
+    const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt(LEASE_BACKFILL_PROMPT_BASELINE);
 
     const BUILTIN_PRESET_BUNDLE = window.LeaseVectorMemory.BUILTIN_PRESET_BUNDLE || null;
     const BUILTIN_PROFILE_ID_SET = new Set(BUILTIN_PROFILE_SPECS.map(spec => spec.id));
@@ -1260,10 +1248,8 @@ updateRow(2, "R3", {1:"当前完整状态"})
                                 return nameStr;
                             }).join(' | ');
 
-                            const nextRow = sheet.nextRowId ? `R${sheet.nextRowId}` : `R${(sheet.r?.length || 0) + 1}`;
-
                             // 优化显示格式
-                            tableDefinitions += `• Index ${index}: ${tableName}\n  (Next Stable Row ID: ${nextRow}，由系统自动生成)\n  (Columns: ${columnNames})\n\n`;
+                            tableDefinitions += `• Index ${index}: ${tableName}\n  (Columns: ${columnNames})\n  (稳定 R 编号只以“当前表格状态”真实显示的行为准；空表只能 insertRow)\n\n`;
                         });
                         result = result.replace(/\{\{TABLE_DEFINITIONS\}\}/g, tableDefinitions.trim());
                         console.log(`[PromptManager] 替换 {{TABLE_DEFINITIONS}} -> 已生成${dataTables.length}个表格定义`);

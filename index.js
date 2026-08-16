@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.4
+// LEASE Vector Memory v4.2.5
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.4 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.5 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.4';
+    const V = 'v4.2.5';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -1045,7 +1045,12 @@
             [this.r[rowIndex], this.r[newIndex]] = [this.r[newIndex], this.r[rowIndex]];
             return true; // 移动成功
         }
-        clear() { this.r = []; }
+        clear() {
+            // “清表”代表明确销毁整张表的数据，而不是逐行删除。
+            // 行数据与稳定编号计数器必须一起重置，否则空表仍会从旧的 R 编号继续。
+            this.r = [];
+            this.nextRowId = 1;
+        }
         json() {
             return {
                 n: this.n,
@@ -3041,11 +3046,12 @@
         // If AI outputs "insertRow → updateRow", it means "insert THEN update the new row"
         // If AI outputs "updateRow → insertRow", it means "update old row THEN insert new row"
 
-        // 空表初始化兼容：旧模型偶尔把“第一条”误写成 updateRow(..., "R0", ...)。
-        // 仅当目标表在事务开始时确实为空时安全转成 insert；其他非法 R 编号仍严格拒绝。
+        // 空表初始化兼容：模型偶尔把“系统下一次将分配的 R 编号”误认为已存在行。
+        // 仅当目标表在事务开始时确实为空时，把任何 update 安全转成 insert；
+        // 非空表中的不存在 R 编号仍严格整批拒绝。
         cs.forEach(cm => {
             const sh = m.get(cm.ti);
-            if (cm.t === 'update' && sh && sh.r.length === 0 && /^(?:R?0)$/i.test(String(cm.ri || ''))) {
+            if (cm.t === 'update' && sh && sh.r.length === 0) {
                 console.warn(`⚠️ [空表初始化兼容] 表${cm.ti} ${cm.ri} updateRow 已转换为 insertRow`);
                 cm.t = 'insert';
                 cm.ri = null;

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -159,7 +160,7 @@ test('追加列忽略重复片段并吸收模型回传的完整新版', () => {
   assert.equal(sheet.r[0][2], '[礼宾室]谈判开始；[礼宾室]双方交换条件');
 });
 
-test('空表初始化时将旧式 R0 更新安全转换为新增', () => {
+test('空表初始化时将任意误用的未来 R 编号安全转换为新增', () => {
   const { Sheet, sandbox } = loadSheetClass();
   const sheet = new Sheet('角色状态', ['#角色名', '#状态']);
   let saves = 0;
@@ -169,12 +170,45 @@ test('空表初始化时将旧式 R0 更新安全转换为新增', () => {
   const exeStart = indexSource.indexOf('function exe(');
   const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
   vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
-  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R0', d: { 0: '洛川', 1: '正常' } }]);
+  sheet.nextRowId = 5;
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R5', d: { 0: '洛川', 1: '正常' } }]);
   assert.equal(result.success, true);
   assert.equal(sheet.r.length, 1);
-  assert.equal(sheet.r[0].__lvm.id, 'R1');
+  assert.equal(sheet.r[0].__lvm.id, 'R5');
   assert.equal(sheet.r[0][0], '洛川');
   assert.equal(saves, 1);
+});
+
+test('明确清表同时重置稳定行编号，普通删除仍不复用编号', () => {
+  const { Sheet } = loadSheetClass();
+  const sheet = new Sheet('角色状态', ['#角色名']);
+  sheet.ins({ 0: '洛川' });
+  sheet.ins({ 0: '俞晚晴' });
+  sheet.del('R2');
+  assert.equal(sheet.nextRowId, 3);
+  sheet.clear();
+  assert.equal(sheet.r.length, 0);
+  assert.equal(sheet.nextRowId, 1);
+  sheet.ins({ 0: '重新初始化' });
+  assert.equal(sheet.r[0].__lvm.id, 'R1');
+});
+
+test('非空表指向不存在的未来 R 编号仍整批拒绝', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色状态', ['#角色名', '#状态']);
+  sheet.ins({ 0: '洛川', 1: '正常' });
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R5', d: { 1: '受伤' } }]);
+  assert.equal(result.success, false);
+  assert.match(result.conflicts.join('；'), /表2 R5不存在/);
+  assert.equal(sheet.r[0][1], '正常');
+  assert.equal(saves, 0);
 });
 
 function lifecycleHarness({ failEmbedding = false } = {}) {
@@ -292,19 +326,53 @@ test('清表入口不依赖已删除的总结管理器并同步冷记忆索引',
   assert.doesNotMatch(cleanup, /m\.sm|lastSummaryIndex/);
   assert.match(cleanup, /syncColdMemoryAfterCleanup/);
   assert.equal((cleanup.match(/await syncColdMemoryAfterCleanup\(\)/g) || []).length, 4);
+  assert.match(indexSource, /clear\(\)\s*\{[\s\S]*?this\.r\s*=\s*\[\];[\s\S]*?this\.nextRowId\s*=\s*1;/);
   assert.doesNotMatch(cleanup, /slice\(0, -1\)\.forEach\(s => s\.clear\(\)\);\s*clearSummarizedMarks\(\)/);
 });
 
 test('追溯请求强制按事件分行并废止同日追加旧规则', () => {
-  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.4/);
-  assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = `你是 LEASE Vector Memory/);
-  assert.match(promptSource, /R0 永远不存在/);
-  assert.match(promptSource, /旧 Base64 正文仅保留用于历史审计，禁止再作为运行时默认值/);
+  const baselineMatch = promptSource.match(/const LEASE_BACKFILL_PROMPT_BASELINE = decodeBuiltinPrompt\(\[(.*?)\]\.join\(''\)\);/s);
+  assert.ok(baselineMatch);
+  const baselineChunks = vm.runInNewContext('[' + baselineMatch[1] + ']');
+  const baselinePrompt = Buffer.from(baselineChunks.join(''), 'base64').toString('utf8').trim();
+  assert.equal(createHash('sha256').update(baselinePrompt).digest('hex'), 'cf6505f811785cb037ce260e7ead26b59c30fb0d4c76d7569def0db9044c0d7d');
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.5/);
+  assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt\(LEASE_BACKFILL_PROMPT_BASELINE\)/);
+  assert.match(promptSource, /用户长期实测的“新版-backfillPrompt\.txt”是唯一正文基线/);
+  assert.match(baselinePrompt, /从待处理消息的第一条读到最后一条/);
+  assert.match(baselinePrompt, /统一剧情时间轴/);
+  assert.match(baselinePrompt, /一名角色只能有一行/);
+  assert.match(promptSource, /表7 手工记忆/);
+  assert.match(promptSource, /R0 和数字数组下标都不是合法行号/);
+  assert.doesNotMatch(promptSource, /Next Stable Row ID:/);
   assert.match(promptSource, /【主线事件分行协议·最高优先级】/);
   assert.match(promptSource, /任何第1列“结束时间”非空的主线行都已经封存/);
   assert.match(promptSource, /“同一天必须 updateRow”.*旧规则全部作废/);
   assert.match(backfillSource, /MAIN_PLOT_SEGMENTATION_RULE/);
   assert.match(backfillSource, /地点切换、目标切换、明显转场/);
+
+  const promptStore = new Map();
+  const promptWindow = { LeaseVectorMemory: { config_obj: {}, DEFAULT_TABLES: [] } };
+  vm.runInNewContext(promptSource, {
+    window: promptWindow,
+    localStorage: {
+      getItem: key => promptStore.get(key) || null,
+      setItem: (key, value) => promptStore.set(key, String(value)),
+      removeItem: key => promptStore.delete(key)
+    },
+    atob,
+    TextDecoder,
+    Uint8Array,
+    structuredClone,
+    setTimeout: () => 0,
+    console: { log() {}, warn() {}, error() {} }
+  });
+  const runtimePrompt = promptWindow.LeaseVectorMemory.PromptManager.DEFAULT_BACKFILL_PROMPT;
+  assert.match(runtimePrompt, /从待处理消息的第一条读到最后一条/);
+  assert.match(runtimePrompt, /【统一剧情时间轴】/);
+  assert.match(runtimePrompt, /表7 手工记忆/);
+  assert.doesNotMatch(runtimePrompt, /表7 记忆总结/);
+  assert.doesNotMatch(runtimePrompt, /(?:updateRow|deleteRow)\(\d+,\s*\d+/);
 });
 
 test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', () => {
@@ -318,7 +386,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.4' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.5' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console

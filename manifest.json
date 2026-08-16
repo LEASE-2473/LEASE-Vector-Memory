@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "lease_vector_memory",
   "display_name": "LEASE Vector Memory",
-  "version": "4.2.4",
+  "version": "4.2.5",
   "description": "行级冷热记忆表格、直接向量化与语义检索",
   "author": "LEASE（基于 gaigai315 / Gaigai Team 的 ST-Memory-Context）",
   "homepage": "https://github.com/LEASE-2473/LEASE-Vector-Memory",
