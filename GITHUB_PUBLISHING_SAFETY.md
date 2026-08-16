@@ -6,10 +6,10 @@
 
 ## 仓库身份
 
-- **计划中的 LEASE 独立发布仓库（唯一允许写入的目标）**：`https://github.com/LEASE-2473/LEASE-Vector-Memory`
+- **LEASE 独立发布仓库（唯一允许写入的目标）**：`https://github.com/LEASE-2473/LEASE-Vector-Memory`
 - **原作者仓库（只读参考，禁止写入）**：`https://github.com/gaigai315/ST-Memory-Context`
 - 本地项目目录：`D:\LEASE AI Project\SillyTavern Project Main\插件\LEASE-Memory-Table`
-- 当前本地仓库没有 remote；实机验收完成前禁止创建远端或推送。
+- 当前 `origin` 必须且只能指向 `https://github.com/LEASE-2473/LEASE-Vector-Memory.git`。该公开仓库由用户于 2026-08-16 明确授权创建并发布。
 
 ## 绝对禁止的操作
 

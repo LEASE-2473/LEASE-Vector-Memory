@@ -34,7 +34,7 @@
 - 热表和冷召回默认插在预设/System/世界书之后、历史聊天之前；显式深度设置覆盖默认锚点。
 - `summary_manager.js`、总结表、自动总结、总结提示词和“详情→总结→向量”链均已删除。
 - 插件 ID 为 `lease_vector_memory`；localStorage、聊天元数据和扩展设置使用 `lvm_`/`lvm` 命名空间，不读取旧插件存储。
-- 当前仓库没有 remote。完成 SillyTavern 实机验收前不得创建 GitHub 仓库或推送。
+- 用户已于 2026-08-16 明确授权公开发布；`origin` 仅指向独立仓库 `https://github.com/LEASE-2473/LEASE-Vector-Memory.git`。禁止向旧 LEASE Fork 或原作者仓库写入。
 
 ## 运行与验证
 
@@ -45,6 +45,6 @@
 
 ## 当前状态与已知问题
 
-- v4.1.0 的本地代码与 8 项自动测试已完成。已核对本机 SillyTavern 实际目录只有旧版 `ST-Memory-Context v3.3.3`，因此未覆盖它；新插件仍未部署到可确认的独立 SillyTavern 测试目录，也未执行真实模型/API 回归。
+- v4.1.0 已公开发布到独立 GitHub 仓库，供 SillyTavern 通过 URL 安装和更新。已核对本机 SillyTavern 实际目录只有旧版 `ST-Memory-Context v3.3.3`，因此未覆盖它；新插件仍未执行真实模型/API 与移动端回归。
 - 为降低一次性重写风险，旧版部分不可达的总结 UI 辅助代码与历史配置字段仍可能存在注释或死分支；总结模块、触发入口、可见配置卡和向量同步入口已移除。后续可继续做纯清理，但不得改变 v2 数据行为。
 - 用户显式导入旧文件时会忽略总结表、把旧绿色状态全部转白，再按当前 X 尝试降冷；Embedding 未配置或失败不会丢行。

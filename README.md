@@ -49,7 +49,15 @@ node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 
 ## 安装与发布状态
 
-当前仅为独立本地仓库，尚未创建 GitHub remote，也未推送。实机验收通过后，计划发布到 `LEASE-2473/LEASE-Vector-Memory`。
+公开独立仓库：[LEASE-2473/LEASE-Vector-Memory](https://github.com/LEASE-2473/LEASE-Vector-Memory)。
+
+在 SillyTavern 的“扩展 → 安装扩展”中输入：
+
+```text
+https://github.com/LEASE-2473/LEASE-Vector-Memory
+```
+
+这是与旧 `ST-Memory-Context` 完全独立的新扩展。首次测试前请停用旧填表插件，避免两个插件同时拦截请求。
 
 - 插件版本：4.1.0
 - 维护者：LEASE

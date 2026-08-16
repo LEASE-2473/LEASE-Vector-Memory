@@ -1,5 +1,14 @@
 # 更改日志
 
+## 2026-08-16 创建独立 GitHub 项目并公开发布
+
+- **用户目标**：把 LEASE Vector Memory 作为全新项目发布到 GitHub，便于在 SillyTavern 中通过 GitHub 安装和更新。
+- **主要修改**：确认当前登录账号为 `LEASE-2473`、目标仓库此前不存在、本地 `main` 干净且无旧 remote；创建公开普通仓库 `LEASE-2473/LEASE-Vector-Memory`，将本地 `main` 推送并设置 `origin` 跟踪。更新 README 安装地址、项目上下文及发布安全边界。未创建 Fork、PR、Issue 或向原作者仓库进行任何写操作。
+- **修改的文件**：`README.md`、`PROJECT_CONTEXT.md`、`GITHUB_PUBLISHING_SAFETY.md`、`CHANGELOG.md`；外部状态新增 GitHub 仓库和 `origin`。
+- **验证**：创建前使用 `gh auth status` 确认账号；使用 `gh repo view` 确认目标仓库原先不存在；首次推送成功。文档提交后再次核对仓库可见性、默认分支、远端地址和远端 `main` 提交。
+- **未完成事项**：尚未在 SillyTavern 中通过公开 URL 完成首次安装和“检查更新”实机回归；真实 Embedding/Rerank 与移动端回归仍待执行。
+- **已知风险与后续建议**：新旧插件同时启用会重复拦截请求，安装新项目后应停用旧 `ST-Memory-Context`。公开仓库任何后续推送仍必须先核对 `origin` 所有者为 `LEASE-2473`。
+
 ## 2026-08-16 向量记忆区三分区与主表状态操作补全 v4.1.0
 
 - **用户目标**：纠正 Embedding/Rerank API 被藏在“外部知识书”中的误导信息架构；让聊天冷记忆书与外部知识书统一可见、可启停；补齐主表可发现的显示/隐藏、冷热和锁定操作；明确关闭向量功能后的普通表格行为。
