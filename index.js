@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.5
+// LEASE Vector Memory v4.2.6
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.5 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.6 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.5';
+    const V = 'v4.2.6';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -3059,11 +3059,6 @@
         });
 
         const conflicts = [];
-        // 主线已填写结束时间的行视为封存。按命令顺序追踪本批新封存的行，
-        // 防止同一批先结束事件、随后又继续向同一行追加。
-        const closedMainRows = new Set((m.get(0)?.r || [])
-            .filter(row => String(row?.[1] || '').trim())
-            .map(row => m.get(0)._ensureMeta(row).__lvm.id));
         for (const cm of cs) {
             const sh = m.get(cm.ti);
             if (!sh) {
@@ -3087,25 +3082,6 @@
                 const meta = sh._ensureMeta(sh.r[rowIndex]).__lvm;
                 if (meta.cold) conflicts.push(`表${cm.ti} ${cm.ri}为绿色冷行`);
                 if (meta.locked) conflicts.push(`表${cm.ti} ${cm.ri}已锁定`);
-                if (cm.t === 'update' && cm.ti === 0) {
-                    if (closedMainRows.has(meta.id)) {
-                        conflicts.push(`表0 ${meta.id}已有结束时间，主线事件已封存；新剧情必须另起一行`);
-                    } else {
-                        const newSummary = String(cm.d?.[2] || '').trim();
-                        if (newSummary) {
-                            const currentLocations = [...String(sh.r[rowIndex]?.[2] || '').matchAll(/\[([^\]]+)\]/g)].map(match => match[1].trim()).filter(Boolean);
-                            const newLocations = [...newSummary.matchAll(/\[([^\]]+)\]/g)].map(match => match[1].trim()).filter(Boolean);
-                            const currentLocation = currentLocations.at(-1) || '';
-                            const distinctNewLocations = [...new Set(newLocations)];
-                            if ((currentLocation && distinctNewLocations.some(location => location !== currentLocation)) || distinctNewLocations.length > 1) {
-                                conflicts.push(`表0 ${meta.id}发生地点切换（${currentLocation || '原地点未标注'} → ${distinctNewLocations.join('、')}），必须另起一行`);
-                            }
-                        }
-                        if (Object.prototype.hasOwnProperty.call(cm.d || {}, '1') && String(cm.d[1] || '').trim()) {
-                            closedMainRows.add(meta.id);
-                        }
-                    }
-                }
             }
         }
         if (conflicts.length > 0) {

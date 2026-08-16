@@ -968,8 +968,8 @@ ${lastError.message}
 
             let backfillInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             backfillInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID，不是数组下标。更新必须写成 updateRow(表号, "R编号", {列号:"值"})，删除必须写成 deleteRow(表号, "R编号")。新增仍写 insertRow(表号, {列号:"值"})，系统自动生成新 R 编号。只能更新当前表格状态中实际可见的 R 编号；绿色冷行、锁定行和手工记忆表不会提供给你，也绝对禁止猜测。`;
-            if ((targetIndex === -1 || targetIndex === 0) && !backfillInstruction.includes('【主线事件分行协议·最高优先级】')) {
-                backfillInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_SEGMENTATION_RULE || `\n\n【主线事件分行协议·最高优先级】\n主线一行只代表同一地点、同一目标且尚未结束的一个事件。地点切换、目标切换、明显转场、事件得出结果或已有结束时间时，即使仍是同一天也必须 insertRow(0, {...}) 另起一行；结束时间非空的 R 行绝对禁止 updateRow。任何“同一天必须更新最后一行”的旧规则全部作废。事件概要必须写为“[地点]角色行为/互动/结果”。`;
+            if ((targetIndex === -1 || targetIndex === 0) && !backfillInstruction.includes('【主线事件聚合与分行协议·最高优先级】')) {
+                backfillInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_COHERENCE_RULE || `\n\n【主线事件聚合与分行协议·最高优先级】\n主线一行是一段围绕同一核心目标、因果连续的完整事件弧，不是单个动作或单一地点。短距离移动、房间切换、途中交谈和连续访问多个地点仍可 updateRow 同一 R 行，并把结束时间更新为当前最新时间。只有核心目标改变、明显长时间跳跃或开启因果独立的新事件时才 insertRow。不得按每个小片段拆行，也不得把互不相关的事件无限塞进同一行。`;
             }
 
             // 🎯 单表模式指令追加
@@ -2379,8 +2379,8 @@ ${lastError.message}
 
             let finalInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             finalInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID。更新使用 updateRow(表号, "R编号", {...})，删除使用 deleteRow(表号, "R编号")，新增使用 insertRow(表号, {...})。严禁使用数组行号或猜测不可见行。`;
-            if ((targetIndex === -1 || targetIndex === 0) && !finalInstruction.includes('【主线事件分行协议·最高优先级】')) {
-                finalInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_SEGMENTATION_RULE || `\n\n【主线事件分行协议·最高优先级】\n主线一行只代表同一地点、同一目标且尚未结束的一个事件。地点切换、目标切换、明显转场、事件得出结果或已有结束时间时，即使仍是同一天也必须 insertRow(0, {...}) 另起一行；结束时间非空的 R 行绝对禁止 updateRow。任何“同一天必须更新最后一行”的旧规则全部作废。事件概要必须写为“[地点]角色行为/互动/结果”。`;
+            if ((targetIndex === -1 || targetIndex === 0) && !finalInstruction.includes('【主线事件聚合与分行协议·最高优先级】')) {
+                finalInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_COHERENCE_RULE || `\n\n【主线事件聚合与分行协议·最高优先级】\n主线一行是一段围绕同一核心目标、因果连续的完整事件弧，不是单个动作或单一地点。短距离移动、房间切换、途中交谈和连续访问多个地点仍可 updateRow 同一 R 行，并把结束时间更新为当前最新时间。只有核心目标改变、明显长时间跳跃或开启因果独立的新事件时才 insertRow。不得按每个小片段拆行，也不得把互不相关的事件无限塞进同一行。`;
             }
 
             // 🎯 [关键修复] 单表模式指令直接拼接到 finalInstruction 后面

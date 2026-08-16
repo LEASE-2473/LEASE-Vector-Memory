@@ -59,6 +59,6 @@ https://github.com/LEASE-2473/LEASE-Vector-Memory
 
 这是与旧 `ST-Memory-Context` 完全独立的新扩展。首次测试前请停用旧填表插件，避免两个插件同时拦截请求。
 
-- 插件版本：4.2.5
+- 插件版本：4.2.6
 - 维护者：LEASE
 - 许可证：MIT，见 [LICENSE](LICENSE)

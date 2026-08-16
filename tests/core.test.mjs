@@ -97,7 +97,7 @@ test('指向冷行的命令使整批事务零写入', () => {
   assert.equal(saves, 0);
 });
 
-test('已填写结束时间的主线行拒绝继续更新', () => {
+test('已填写结束时间的主线行仍允许连续事件延长', () => {
   const { Sheet, sandbox } = loadSheetClass();
   const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
   sheet.ins({ 0: '20:00', 1: '22:35', 2: '[礼宾室]谈判结束' });
@@ -108,18 +108,19 @@ test('已填写结束时间的主线行拒绝继续更新', () => {
   const exeStart = indexSource.indexOf('function exe(');
   const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
   vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
-  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]继续新事件' } }]);
-  assert.equal(result.success, false);
-  assert.match(result.conflicts.join('；'), /已有结束时间.*已封存/);
-  assert.equal(sheet.r[0][2], '[礼宾室]谈判结束');
-  assert.equal(saves, 0);
+  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 1: '22:50', 2: '[车内]双方继续落实谈判结果' } }]);
+  assert.equal(result.success, true);
+  assert.equal(sheet.r[0][1], '22:50');
+  assert.match(sheet.r[0][2], /\[礼宾室\]谈判结束.*\[车内\]双方继续落实谈判结果/);
+  assert.equal(saves, 1);
 });
 
-test('同一批先封存主线再更新同一 R 行时整批拒绝', () => {
+test('同一批可以连续更新同一主线 R 行', () => {
   const { Sheet, sandbox } = loadSheetClass();
   const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
   sheet.ins({ 0: '20:00', 2: '[礼宾室]谈判进行中' });
-  sandbox.m = { get: index => index === 0 ? sheet : null, save() { throw new Error('冲突事务不应保存'); } };
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
   sandbox.window.LeaseVectorMemory = {};
   sandbox.globalThis = sandbox;
   const exeStart = indexSource.indexOf('function exe(');
@@ -127,27 +128,29 @@ test('同一批先封存主线再更新同一 R 行时整批拒绝', () => {
   vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
   const result = sandbox.exe([
     { t: 'update', ti: 0, ri: 'R1', d: { 1: '22:35', 2: '[礼宾室]谈判结束' } },
-    { t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]开始另一事件' } }
+    { t: 'update', ti: 0, ri: 'R1', d: { 1: '22:50', 2: '[车内]继续落实谈判结果' } }
   ]);
-  assert.equal(result.success, false);
-  assert.equal(sheet.r[0][1] || '', '');
-  assert.equal(sheet.r[0][2], '[礼宾室]谈判进行中');
+  assert.equal(result.success, true);
+  assert.equal(sheet.r[0][1], '22:50');
+  assert.match(sheet.r[0][2], /谈判进行中.*谈判结束.*继续落实谈判结果/);
+  assert.equal(saves, 1);
 });
 
-test('主线 updateRow 引入新地点时拒绝并要求另起一行', () => {
+test('主线同一事件弧允许 updateRow 记录多个地点', () => {
   const { Sheet, sandbox } = loadSheetClass();
   const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
   sheet.ins({ 0: '20:00', 2: '[礼宾室]谈判进行中' });
-  sandbox.m = { get: index => index === 0 ? sheet : null, save() { throw new Error('地点冲突事务不应保存'); } };
+  let saves = 0;
+  sandbox.m = { get: index => index === 0 ? sheet : null, save: () => saves++ };
   sandbox.window.LeaseVectorMemory = {};
   sandbox.globalThis = sandbox;
   const exeStart = indexSource.indexOf('function exe(');
   const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
   vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
-  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]开始讨论下一目标' } }]);
-  assert.equal(result.success, false);
-  assert.match(result.conflicts.join('；'), /发生地点切换.*必须另起一行/);
-  assert.equal(sheet.r[0][2], '[礼宾室]谈判进行中');
+  const result = sandbox.exe([{ t: 'update', ti: 0, ri: 'R1', d: { 2: '[车内]继续讨论并落实同一谈判目标' } }]);
+  assert.equal(result.success, true);
+  assert.match(sheet.r[0][2], /\[礼宾室\].*\[车内\]/);
+  assert.equal(saves, 1);
 });
 
 test('追加列忽略重复片段并吸收模型回传的完整新版', () => {
@@ -330,13 +333,13 @@ test('清表入口不依赖已删除的总结管理器并同步冷记忆索引',
   assert.doesNotMatch(cleanup, /slice\(0, -1\)\.forEach\(s => s\.clear\(\)\);\s*clearSummarizedMarks\(\)/);
 });
 
-test('追溯请求强制按事件分行并废止同日追加旧规则', () => {
+test('追溯请求按完整事件弧聚合且不使用代码封存', () => {
   const baselineMatch = promptSource.match(/const LEASE_BACKFILL_PROMPT_BASELINE = decodeBuiltinPrompt\(\[(.*?)\]\.join\(''\)\);/s);
   assert.ok(baselineMatch);
   const baselineChunks = vm.runInNewContext('[' + baselineMatch[1] + ']');
   const baselinePrompt = Buffer.from(baselineChunks.join(''), 'base64').toString('utf8').trim();
   assert.equal(createHash('sha256').update(baselinePrompt).digest('hex'), 'cf6505f811785cb037ce260e7ead26b59c30fb0d4c76d7569def0db9044c0d7d');
-  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.5/);
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.6/);
   assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt\(LEASE_BACKFILL_PROMPT_BASELINE\)/);
   assert.match(promptSource, /用户长期实测的“新版-backfillPrompt\.txt”是唯一正文基线/);
   assert.match(baselinePrompt, /从待处理消息的第一条读到最后一条/);
@@ -345,11 +348,13 @@ test('追溯请求强制按事件分行并废止同日追加旧规则', () => {
   assert.match(promptSource, /表7 手工记忆/);
   assert.match(promptSource, /R0 和数字数组下标都不是合法行号/);
   assert.doesNotMatch(promptSource, /Next Stable Row ID:/);
-  assert.match(promptSource, /【主线事件分行协议·最高优先级】/);
-  assert.match(promptSource, /任何第1列“结束时间”非空的主线行都已经封存/);
-  assert.match(promptSource, /“同一天必须 updateRow”.*旧规则全部作废/);
-  assert.match(backfillSource, /MAIN_PLOT_SEGMENTATION_RULE/);
-  assert.match(backfillSource, /地点切换、目标切换、明显转场/);
+  assert.match(promptSource, /【主线事件聚合与分行协议·最高优先级】/);
+  assert.match(promptSource, /结束时间.*不是不可修改的封印/);
+  assert.match(promptSource, /短距离移动、房间切换、途中交谈/);
+  assert.match(promptSource, /不得因为“同一天”或“人物相同”就把彼此无关的多个事件无限塞入同一行/);
+  assert.match(backfillSource, /MAIN_PLOT_COHERENCE_RULE/);
+  assert.match(backfillSource, /短距离移动、房间切换、途中交谈/);
+  assert.doesNotMatch(indexSource, /已有结束时间，主线事件已封存|发生地点切换.*必须另起一行|closedMainRows/);
 
   const promptStore = new Map();
   const promptWindow = { LeaseVectorMemory: { config_obj: {}, DEFAULT_TABLES: [] } };
@@ -386,7 +391,7 @@ test('GitHub 安装目录能够完成依赖定位并创建独立顶部入口', (
 
 test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory 目录', () => {
   const getPathSource = extractBlock(indexSource, 'function getExtensionPath(');
-  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.5' : null }];
+  const scripts = [{ getAttribute: name => name === 'src' ? '/scripts/extensions/third-party/LEASE-Vector-Memory/index.js?v=4.2.6' : null }];
   const sandbox = {
     document: { currentScript: null, getElementsByTagName: tag => tag === 'script' ? scripts : [] },
     console
