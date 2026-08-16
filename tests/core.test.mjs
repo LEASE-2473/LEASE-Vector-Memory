@@ -403,8 +403,22 @@ test('来源区间固定列具有明确裁剪宽度和不透明主题背景', ()
   assert.match(css, /background:\s*var\(--g-sticky-bg,\s*#f6f8fc\)\s*!important/);
   const themeStart = indexSource.indexOf('function thm()');
   const themeEnd = indexSource.indexOf('\n    function ', themeStart + 1);
-  assert.match(indexSource.slice(themeStart, themeEnd), /setProperty\('--g-sticky-bg'/);
+  const themeSource = indexSource.slice(themeStart, themeEnd);
+  assert.match(themeSource, /const stickyColumnBg = isDark \? '#24272d' : '#f6f8fc'/);
+  assert.match(themeSource, /setProperty\('--g-sticky-bg', stickyColumnBg\)/);
+  assert.match(themeSource, /background: \$\{stickyColumnBg\} !important/);
+  assert.doesNotMatch(themeSource, /book_surface/);
   assert.doesNotMatch(indexSource, /class="g-col-num" style="width:40px/);
+});
+
+test('主题样式错误不能阻断顶部入口初始化', () => {
+  const initStart = indexSource.indexOf('async function ini()');
+  const initEnd = indexSource.indexOf('\n    function ', initStart + 1);
+  const initSource = indexSource.slice(initStart, initEnd);
+  assert.match(initSource, /try \{\s*thm\(\);\s*\} catch \(e\) \{/);
+  assert.match(initSource, /主题应用失败，已跳过主题以继续初始化/);
+  assert.ok(initSource.indexOf("id: 'lvm-top-wrapper'") > initSource.indexOf('thm();'));
+  assert.ok(initSource.indexOf("id: 'lvm-top-btn'") > initSource.indexOf('thm();'));
 });
 
 test('自动降冷面板不可被 API 配置压缩并提供响应式布局', () => {

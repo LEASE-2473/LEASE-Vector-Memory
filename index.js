@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.10
+// LEASE Vector Memory v4.3.0
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.10 启动');
+    console.log('🚀 LEASE Vector Memory v4.3.0 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.10';
+    const V = 'v4.3.0';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -3231,7 +3231,8 @@
         // ✅ 🌙 Dark Mode: 动态变量定义 (深色毛玻璃版)
         const isDark = UI.darkMode;
         // 固定列必须使用不透明背景，否则横向滚动时下方数据会透过行号/来源列显示。
-        document.documentElement.style.setProperty('--g-sticky-bg', isDark ? '#24272d' : '#f6f8fc');
+        const stickyColumnBg = isDark ? '#24272d' : '#f6f8fc';
+        document.documentElement.style.setProperty('--g-sticky-bg', stickyColumnBg);
         const bg_header_glass = isDark ? `rgba(${rgbStr}, 0.48)` : `rgba(${rgbStr}, 0.56)`;
         const bg_toolbar_glass = isDark ? `rgba(${rgbStr}, 0.16)` : `rgba(${rgbStr}, 0.20)`;
         const bg_button_glass = isDark ? `rgba(${rgbStr}, 0.24)` : `rgba(${rgbStr}, 0.26)`;
@@ -3453,11 +3454,11 @@
         /* 行号与来源是横向滚动时的固定列：保持不透明，避免底层数据叠字。 */
         #gai-main-pop .g-tbl-wrap td.g-col-num,
         #gai-main-pop .g-tbl-wrap td.g-col-source {
-            background: ${book_surface} !important;
+            background: ${stickyColumnBg} !important;
         }
         #gai-main-pop .g-row.g-summarized td.g-col-num,
         #gai-main-pop .g-row.g-summarized td.g-col-source {
-            background: color-mix(in srgb, ${book_surface} 82%, #28a745 18%) !important;
+            background: color-mix(in srgb, ${stickyColumnBg} 82%, #28a745 18%) !important;
             opacity: 1 !important;
         }
 
@@ -10421,7 +10422,11 @@
             m.load();
         }
 
-        thm();
+        try {
+            thm();
+        } catch (e) {
+            console.error('❌ [LEASE Vector Memory] 主题应用失败，已跳过主题以继续初始化:', e);
+        }
 
         // ✨✨✨ 核心修复：创建"创世快照"(-1号)，代表对话开始前的空状态 ✨✨✨
         snapshotHistory['-1'] = {
