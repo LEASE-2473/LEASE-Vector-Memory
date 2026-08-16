@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.3.0
+// LEASE Vector Memory v4.3.1
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.3.0 启动');
+    console.log('🚀 LEASE Vector Memory v4.3.1 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.3.0';
+    const V = 'v4.3.1';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -1795,7 +1795,7 @@
 
             // 2. 先彻底清空当前表格
             // (只要通过了上面的时间戳检查，说明这个空状态是合法的，或者是AI生成的最新状态)
-            m.s.slice(0, -1).forEach(sheet => sheet.r = []);
+            m.s.slice(0, -1).forEach(sheet => sheet.clear());
 
             // 3. ✨✨✨ [关键修复] 强力深拷贝恢复 ✨✨✨
             // 将快照里的数据（哪怕是空的）复印一份给当前表格
@@ -2854,7 +2854,11 @@
             const rows = new Map();
             sheet.r.forEach(row => {
                 const meta = sheet._ensureMeta(row).__lvm;
-                rows.set(meta.id, { cold: meta.cold, locked: meta.locked });
+                rows.set(meta.id, {
+                    cold: meta.cold,
+                    locked: meta.locked,
+                    primaryKey: String(row[0] || '').trim()
+                });
             });
             const state = {
                 initiallyEmpty: rows.size === 0,
@@ -2879,7 +2883,11 @@
             const state = getTransactionState(cm.ti, sh);
             if (cm.t === 'insert') {
                 const insertedId = `R${state.nextRowId++}`;
-                state.rows.set(insertedId, { cold: false, locked: false });
+                state.rows.set(insertedId, {
+                    cold: false,
+                    locked: false,
+                    primaryKey: String(cm.d?.[0] || '').trim()
+                });
                 state.hasPriorMutation = true;
                 continue;
             }
@@ -2887,14 +2895,19 @@
                 const rowId = String(cm.ri || '').toUpperCase();
                 cm.ri = rowId;
 
-                // 兼容更新前已清空但仍残留未来编号的会话。只转换空表事务的首个误用 update；
-                // 一旦同批已经新增了行，后续 update 必须命中虚拟状态中的真实 R 编号。
+                // 兼容模型把空表首条数据误写成 update。只有携带第0列主键时才可安全转为 insert；
+                // 这与 nextRowId 是否曾残留无关。一旦同批已新增行，后续 update 必须命中真实 R。
                 if (cm.t === 'update' && state.initiallyEmpty && state.rows.size === 0 && !state.hasPriorMutation) {
+                    const primaryKey = String(cm.d?.[0] || '').trim();
+                    if (!primaryKey) {
+                        conflicts.push(`表${cm.ti}为空，${cm.ri || 'updateRow'}缺少第0列主键，无法安全新增`);
+                        continue;
+                    }
                     const insertedId = `R${state.nextRowId++}`;
                     console.warn(`⚠️ [空表初始化兼容] 表${cm.ti} ${cm.ri} updateRow 已转换为 insertRow (${insertedId})`);
                     cm.t = 'insert';
                     cm.ri = null;
-                    state.rows.set(insertedId, { cold: false, locked: false });
+                    state.rows.set(insertedId, { cold: false, locked: false, primaryKey });
                     state.hasPriorMutation = true;
                     continue;
                 }
@@ -2902,7 +2915,32 @@
                     conflicts.push(`表${cm.ti}缺少有效 R 编号`);
                     continue;
                 }
-                const meta = state.rows.get(cm.ri);
+                let meta = state.rows.get(cm.ri);
+                if (!meta && cm.t === 'update' && sh.n === '角色信息') {
+                    const primaryKey = String(cm.d?.[0] || '').trim();
+                    if (primaryKey) {
+                        const matchingRows = Array.from(state.rows.entries()).filter(([, rowMeta]) => rowMeta.primaryKey === primaryKey);
+                        const blankRows = Array.from(state.rows.entries()).filter(([, rowMeta]) => !rowMeta.primaryKey);
+                        if (matchingRows.length === 1) {
+                            cm.ri = matchingRows[0][0];
+                            meta = matchingRows[0][1];
+                            console.warn(`⚠️ [角色主键纠错] 表${cm.ti} 已按角色名“${primaryKey}”将目标修正为 ${cm.ri}`);
+                        } else if (matchingRows.length === 0 && blankRows.length === 1 && state.rows.size === 1) {
+                            cm.ri = blankRows[0][0];
+                            meta = blankRows[0][1];
+                            meta.primaryKey = primaryKey;
+                            console.warn(`⚠️ [角色主键修复] 表${cm.ti} 已用角色名“${primaryKey}”补全空主键行 ${cm.ri}`);
+                        } else if (matchingRows.length === 0) {
+                            const insertedId = `R${state.nextRowId++}`;
+                            cm.t = 'insert';
+                            cm.ri = null;
+                            state.rows.set(insertedId, { cold: false, locked: false, primaryKey });
+                            state.hasPriorMutation = true;
+                            console.warn(`⚠️ [角色主键纠错] 表${cm.ti} 未找到角色“${primaryKey}”，错误 updateRow 已转换为 insertRow (${insertedId})`);
+                            continue;
+                        }
+                    }
+                }
                 if (!meta) {
                     conflicts.push(`表${cm.ti} ${cm.ri}不存在`);
                     continue;

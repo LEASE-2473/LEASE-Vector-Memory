@@ -15,7 +15,7 @@
 
     // ===== 常量定义 =====
     const PROFILE_KEY = 'lvm_profiles';  // 预设数据存储键
-    const PROMPT_VERSION = 7.9;         // LEASE 组合方案版本号
+    const PROMPT_VERSION = 8.0;         // LEASE 组合方案版本号
     const DEFAULT_PROMPT_PROFILE_ID = 'default';
     const DEFAULT_PROMPT_PROFILE_NAME = 'LEASE专属';
     const DEFAULT_TABLE_PRESET_NAME = 'LEASE专属';
@@ -59,6 +59,39 @@
 
 【主线事件向量分块补充协议·最高优先级·v7.9】
 每个 R 是独立向量记忆单元。只有上一行仍未完结，且新剧情属于同一目标、直接因果和连续行动链时才可 updateRow；连续微转场和无中断跨零点不构成事件边界。入睡/醒来、散场、长时段跳跃、目标或活动阶段改变时必须 insertRow。单行建议约 250~450 字，硬上限约 800 字；重大长事件按谈判、筹划、执行、收尾等自然阶段分行。每行必须脱离世界书独立说明地点、时间或起因、参与者、关键事实、具体结果及后续影响，禁止空话和流水账。`;
+
+    const ENTITY_WRITE_RULE = `
+
+【实体表新增与更新协议·最高优先级·v8.0】
+表2至表6必须先按主键核对当前表格：角色信息按角色名，人物关系按主体角色＋对象角色，世界设定按设定名，物品追踪按物品名称，约定按约定时间＋约定内容。真实 R 行中存在同一主键才可 updateRow；不存在就必须 insertRow，严禁按“第几个实体”猜测 R2、R3 等未来编号。角色信息无论新增或更新都必须在指令中携带第0列角色名：新角色使用 insertRow(2, {0:"角色名", ...})；更新已有角色使用 updateRow(2, "真实R编号", {0:"角色名", ...})。若当前角色信息行的角色名为空，只能更新真实显示的那个 R，并在同一指令补齐第0列角色名。`;
+
+    function rewriteEntityWriteInstructions(source) {
+        return String(source || '')
+            .replace(
+                '👉 【第二轨：实体档案表（表2 角色、表3 关系、表4 设定、表5 物品、表6 约定）】 ➔ 严格【全局唯一 (updateRow)】！',
+                '👉 【第二轨：实体档案表（表2 角色、表3 关系、表4 设定、表5 物品、表6 约定）】 ➔ 严格【按主键新增或更新（存在 updateRow，不存在 insertRow）】！'
+            )
+            .replace(
+                '- 必须先扫描当前表格，若已存在该实体，必须使用 updateRow 覆盖更新，严禁 insertRow 重复建行！',
+                '- 必须先扫描当前表格：若已存在该实体，使用 updateRow 覆盖更新；若不存在，必须使用 insertRow 新建并完整填写主键列，严禁猜测未来 R 编号！'
+            )
+            .replace(
+                '- 记录世界书未完整覆盖的新 NPC；一名角色全局唯一行。已存在角色必须 updateRow。',
+                '- 记录世界书未完整覆盖的新 NPC；一名角色全局唯一行。已存在角色必须 updateRow；不存在的角色必须 insertRow，并填写第0列角色名。'
+            )
+            .replace(
+                '3. 必须扫描当前表格状态，R 编号必须真实存在且带引号（如 `"R1"`、`"R2"`），严禁使用 R0 或数字下标。',
+                '3. 必须扫描当前表格状态。只有更新/删除已存在实体时才能使用真实且带引号的 R 编号（如 `"R1"`、`"R2"`）；新实体必须 insertRow，严禁猜测未来 R、使用 R0 或数字下标。'
+            )
+            .replace(
+                '// 示例5：更新已有角色档案与状态（实体表必须 Update）\nupdateRow(2, "R1", {3: "精神重度疲惫", 4: "履行情人契约并暗中搜集黑塔历史档案"})',
+                '// 示例5A：首次记录新角色（当前角色信息表没有该角色，必须 Insert 并填写角色名）\ninsertRow(2, {0: "前晚晴", 1: "历史系助教", 2: "学术理性、谨慎", 3: "精神重度疲惫", 4: "履行情人契约并暗中搜集黑塔历史档案"})\n\n// 示例5B：更新已有角色档案与状态（真实表格中前晚晴为 R1，必须重复携带角色名）\nupdateRow(2, "R1", {0: "前晚晴", 3: "精神状态恢复", 4: "继续搜集黑塔历史档案"})'
+            )
+            .replace(
+                '实体表严格根据已有 R 号执行 updateRow。',
+                '实体表严格按主键判断：真实 R 行中已有实体才 updateRow，不存在的实体必须 insertRow。'
+            );
+    }
 
     function ensureMainPlotLocationRule(prompt) {
         let text = String(prompt || '').trim();
@@ -466,7 +499,9 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
     // 用户实测并复审的“LEASE vectorprompt.md”是默认追溯提示词正文。
     // 正文已原生包含稳定 R、冷热隔离、手工记忆和向量事件分块规则。
     function migrateLeaseBackfillPrompt(source) {
-        return ensureMainPlotLocationRule(String(source || '').trim());
+        let prompt = rewriteEntityWriteInstructions(ensureMainPlotLocationRule(String(source || '').trim()));
+        if (!prompt.includes('【实体表新增与更新协议·最高优先级·v8.0】')) prompt += ENTITY_WRITE_RULE;
+        return prompt;
     }
 
     const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt(LEASE_BACKFILL_PROMPT_BASELINE);
@@ -2567,6 +2602,7 @@ const AI_TAG_DIAGNOSTIC_PROMPT = `你是一个剧情记录系统的标签过滤�
         // 版本信息
         PROMPT_VERSION: PROMPT_VERSION,
         MAIN_PLOT_COHERENCE_RULE: MAIN_PLOT_COHERENCE_RULE,
+        ENTITY_WRITE_RULE: ENTITY_WRITE_RULE,
 
         // ✅ 热更新功能
         checkUpdate: async () => false

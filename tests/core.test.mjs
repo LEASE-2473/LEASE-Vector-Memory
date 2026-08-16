@@ -204,6 +204,88 @@ test('空表初始化时将任意误用的未来 R 编号安全转换为新增',
   assert.equal(saves, 1);
 });
 
+test('空表错误 update 缺少主键时拒绝创建幽灵行', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色信息', ['#角色名', '#身份', '#性格', '#身体状态', '#当前目标']);
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R1', d: { 3: '疲惫', 4: '完成契约' } }]);
+
+  assert.equal(result.success, false);
+  assert.match(result.conflicts.join('；'), /缺少第0列主键/);
+  assert.equal(sheet.r.length, 0);
+  assert.equal(saves, 0);
+});
+
+test('角色信息按角色名纠正模型猜错的 R 编号', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色信息', ['#角色名', '#身份', '#身体状态']);
+  sheet.ins({ 0: '俞晚晴', 1: '历史系助教', 2: '正常' });
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R2', d: { 0: '俞晚晴', 2: '疲惫' } }]);
+
+  assert.equal(result.success, true);
+  assert.equal(sheet.r.length, 1);
+  assert.equal(sheet.r[0].__lvm.id, 'R1');
+  assert.equal(sheet.r[0][2], '疲惫');
+  assert.equal(saves, 1);
+});
+
+test('角色信息唯一空主键行可由带角色名的错误 R 更新修复', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色信息', ['#角色名', '#身份', '#身体状态', '#当前目标']);
+  sheet.ins({ 2: '保持学术理性', 3: '履行情人契约' });
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R2', d: { 0: '俞晚晴', 1: '历史系助教' } }]);
+
+  assert.equal(result.success, true);
+  assert.equal(sheet.r.length, 1);
+  assert.equal(sheet.r[0].__lvm.id, 'R1');
+  assert.equal(sheet.r[0][0], '俞晚晴');
+  assert.equal(sheet.r[0][1], '历史系助教');
+});
+
+test('角色信息新角色误用未来 R 时按主键安全转为新增', () => {
+  const { Sheet, sandbox } = loadSheetClass();
+  const sheet = new Sheet('角色信息', ['#角色名', '#身份']);
+  sheet.ins({ 0: '洛川', 1: '黑塔建立者' });
+  let saves = 0;
+  sandbox.m = { get: index => index === 2 ? sheet : null, save: () => saves++ };
+  sandbox.window.LeaseVectorMemory = {};
+  sandbox.globalThis = sandbox;
+  const exeStart = indexSource.indexOf('function exe(');
+  const exeEnd = indexSource.indexOf('\n    function extractPhoneSignal', exeStart);
+  vm.runInContext(`globalThis.exe = ${indexSource.slice(exeStart, exeEnd).trim()}`, sandbox);
+
+  const result = sandbox.exe([{ t: 'update', ti: 2, ri: 'R2', d: { 0: '俞晚晴', 1: '历史系助教' } }]);
+
+  assert.equal(result.success, true);
+  assert.equal(sheet.r.length, 2);
+  assert.equal(sheet.r[1].__lvm.id, 'R2');
+  assert.equal(sheet.r[1][0], '俞晚晴');
+  assert.equal(saves, 1);
+});
+
 test('空表事务按顺序执行 insert 后 update，且校验不修改原命令', () => {
   const { Sheet, sandbox } = loadSheetClass();
   const sheet = new Sheet('主线剧情', ['#开始时间', '#结束时间', '事件概要']);
@@ -267,6 +349,15 @@ test('明确清表同时重置稳定行编号，普通删除仍不复用编号',
   assert.equal(sheet.nextRowId, 1);
   sheet.ins({ 0: '重新初始化' });
   assert.equal(sheet.r[0].__lvm.id, 'R1');
+});
+
+test('快照回档清空阶段也统一重置稳定行计数器', () => {
+  const restoreStart = indexSource.indexOf('function restoreSnapshot(');
+  const restoreEnd = indexSource.indexOf('\n    function cleanOldSnapshots', restoreStart);
+  const restoreSource = indexSource.slice(restoreStart, restoreEnd);
+
+  assert.match(restoreSource, /slice\(0, -1\)\.forEach\(sheet => sheet\.clear\(\)\)/);
+  assert.doesNotMatch(restoreSource, /sheet\.r\s*=\s*\[\]/);
 });
 
 test('非空表指向不存在的未来 R 编号仍整批拒绝', () => {
@@ -448,7 +539,7 @@ test('默认追溯提示词使用实测向量分块版且兼容旧自定义方�
   const baselineChunks = vm.runInNewContext('[' + baselineMatch[1] + ']');
   const baselinePrompt = Buffer.from(baselineChunks.join(''), 'base64').toString('utf8').trim();
   assert.equal(createHash('sha256').update(baselinePrompt).digest('hex'), '6009ac3eb9b89f4cb14f4f51399e79a194866ca027696933be7857da81b50f31');
-  assert.match(promptSource, /PROMPT_VERSION\s*=\s*7\.9/);
+  assert.match(promptSource, /PROMPT_VERSION\s*=\s*8\.0/);
   assert.match(promptSource, /const LEASE_BACKFILL_PROMPT = migrateLeaseBackfillPrompt\(LEASE_BACKFILL_PROMPT_BASELINE\)/);
   assert.match(promptSource, /用户实测并复审的“LEASE vectorprompt\.md”是默认追溯提示词正文/);
   assert.match(baselinePrompt, /历史记录填表指南（向量化精细记忆版 v2）/);
@@ -490,12 +581,22 @@ test('默认追溯提示词使用实测向量分块版且兼容旧自定义方�
     console: { log() {}, warn() {}, error() {} }
   });
   const runtimePrompt = promptWindow.LeaseVectorMemory.PromptManager.DEFAULT_BACKFILL_PROMPT;
-  assert.equal(runtimePrompt, baselinePrompt);
+  assert.notEqual(runtimePrompt, baselinePrompt);
+  assert.match(runtimePrompt, /历史记录填表指南（向量化精细记忆版 v2）/);
   assert.match(runtimePrompt, /从待处理消息的第一条读到最后一条/);
   assert.match(runtimePrompt, /【统一剧情时间轴】/);
   assert.match(runtimePrompt, /表7 手工记忆/);
   assert.doesNotMatch(runtimePrompt, /表7 记忆总结/);
   assert.doesNotMatch(runtimePrompt, /【主线事件向量分块补充协议·最高优先级·v7\.9】/);
+  assert.match(runtimePrompt, /【实体表新增与更新协议·最高优先级·v8\.0】/);
+  assert.match(runtimePrompt, /不存在就必须 insertRow/);
+  assert.match(runtimePrompt, /角色信息无论新增或更新都必须在指令中携带第0列角色名/);
+  assert.match(runtimePrompt, /按主键新增或更新（存在 updateRow，不存在 insertRow）/);
+  assert.match(runtimePrompt, /示例5A：首次记录新角色/);
+  assert.match(runtimePrompt, /insertRow\(2, \{0: "前晚晴"/);
+  assert.match(runtimePrompt, /示例5B：更新已有角色档案与状态/);
+  assert.match(runtimePrompt, /updateRow\(2, "R1", \{0: "前晚晴"/);
+  assert.doesNotMatch(runtimePrompt, /实体档案表[^\n]*严格【全局唯一 \(updateRow\)】/);
   assert.doesNotMatch(runtimePrompt, /(?:updateRow|deleteRow)\(\d+,\s*\d+/);
 });
 

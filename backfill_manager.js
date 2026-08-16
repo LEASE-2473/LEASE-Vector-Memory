@@ -968,6 +968,9 @@ ${lastError.message}
 
             let backfillInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             backfillInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID，不是数组下标。更新必须写成 updateRow(表号, "R编号", {列号:"值"})，删除必须写成 deleteRow(表号, "R编号")。新增仍写 insertRow(表号, {列号:"值"})，系统自动生成新 R 编号。只能更新当前表格状态中实际可见的 R 编号；绿色冷行、锁定行和手工记忆表不会提供给你，也绝对禁止猜测。`;
+            if (!backfillInstruction.includes('【实体表新增与更新协议·最高优先级·v8.0】')) {
+                backfillInstruction += window.LeaseVectorMemory?.PromptManager?.ENTITY_WRITE_RULE || `\n\n【实体表新增与更新协议·最高优先级·v8.0】\n表2至表6只有主键已存在于真实 R 行时才能 updateRow；新实体必须 insertRow，禁止猜测未来 R 编号。角色信息的新增和更新都必须携带第0列角色名。`;
+            }
             if ((targetIndex === -1 || targetIndex === 0) && !backfillInstruction.includes('历史记录填表指南（向量化精细记忆版 v2）') && !backfillInstruction.includes('【主线事件向量分块补充协议·最高优先级·v7.9】')) {
                 backfillInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_COHERENCE_RULE || `\n\n【主线事件向量分块补充协议·最高优先级·v7.9】\n每个 R 是独立向量记忆单元。只有未完结的同一目标、直接因果和连续行动链才可 updateRow；连续微转场和无中断跨零点不拆行，睡眠、散场、时间跳跃或活动阶段改变必须新建 R。单行建议约 250~450 字，硬上限约 800 字，并写明地点、参与者、关键事实、具体结果和后续影响。`;
             }
@@ -2379,6 +2382,9 @@ ${lastError.message}
 
             let finalInstruction = window.LeaseVectorMemory.PromptManager.resolveVariables(rulesContent, ctx);
             finalInstruction += `\n\n【LEASE Vector Memory 稳定行协议·最高优先级】\n当前表格中的 [R数字] 是稳定行 ID。更新使用 updateRow(表号, "R编号", {...})，删除使用 deleteRow(表号, "R编号")，新增使用 insertRow(表号, {...})。严禁使用数组行号或猜测不可见行。`;
+            if (!finalInstruction.includes('【实体表新增与更新协议·最高优先级·v8.0】')) {
+                finalInstruction += window.LeaseVectorMemory?.PromptManager?.ENTITY_WRITE_RULE || `\n\n【实体表新增与更新协议·最高优先级·v8.0】\n表2至表6只有主键已存在于真实 R 行时才能 updateRow；新实体必须 insertRow，禁止猜测未来 R 编号。角色信息的新增和更新都必须携带第0列角色名。`;
+            }
             if ((targetIndex === -1 || targetIndex === 0) && !finalInstruction.includes('历史记录填表指南（向量化精细记忆版 v2）') && !finalInstruction.includes('【主线事件向量分块补充协议·最高优先级·v7.9】')) {
                 finalInstruction += window.LeaseVectorMemory?.PromptManager?.MAIN_PLOT_COHERENCE_RULE || `\n\n【主线事件向量分块补充协议·最高优先级·v7.9】\n每个 R 是独立向量记忆单元。只有未完结的同一目标、直接因果和连续行动链才可 updateRow；连续微转场和无中断跨零点不拆行，睡眠、散场、时间跳跃或活动阶段改变必须新建 R。单行建议约 250~450 字，硬上限约 800 字，并写明地点、参与者、关键事实、具体结果和后续影响。`;
             }
