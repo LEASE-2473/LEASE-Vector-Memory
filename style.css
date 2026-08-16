@@ -70,10 +70,6 @@
     z-index: 10000000 !important;
 }
 
-#gai-summary-pop {
-    z-index: 10000001 !important;
-}
-
 /* ========== 隐藏记忆标签 ========== */
 .g-hidden-tag {
     display: none !important;
@@ -362,7 +358,6 @@
 }
 
 /* 3. 核心业务逻辑：科技感的靛蓝色 (Indigo) */
-#gai-btn-sum i, 
 #gai-btn-back i { 
     color: #4f46e5 !important; 
 }
@@ -1226,87 +1221,6 @@
 }
 
 /* ========== 配置页：世界书与向量化分区 ========== */
-.gg-summary-rule-card {
-    margin: 0 0 10px 0;
-}
-
-.gg-summary-send-notice-title {
-    font-size: 11px;
-    font-weight: 700;
-    margin-bottom: 6px;
-    color: var(--g-tc);
-}
-
-.gg-summary-send-notice-main {
-    font-size: 11px;
-    line-height: 1.45;
-    margin-bottom: 6px;
-    color: var(--g-tc);
-}
-
-.gg-summary-send-notice-list {
-    font-size: 10px;
-    line-height: 1.55;
-    color: var(--g-tc);
-    opacity: 0.85;
-}
-
-.gg-summary-send-notice-list-title {
-    font-weight: 700;
-    margin-bottom: 2px;
-}
-
-.gg-summary-default-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--g-tc);
-    line-height: 1.4;
-    margin-bottom: 6px;
-    flex-wrap: wrap;
-}
-
-.gg-summary-fake-checkbox {
-    width: 16px;
-    height: 16px;
-    min-width: 16px;
-    min-height: 16px;
-    border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    background: #4caf50;
-    color: #ffffff;
-    font-size: 11px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-.gg-summary-default-state {
-    font-size: 10px;
-    font-weight: 700;
-    color: #2e7d32;
-    background: rgba(76, 175, 80, 0.16);
-    border: 1px solid rgba(76, 175, 80, 0.35);
-    border-radius: 999px;
-    padding: 1px 8px;
-}
-
-.g-w.g-gl .gg-summary-default-state {
-    color: #bdf2c2;
-    border-color: rgba(156, 230, 162, 0.45);
-    background: rgba(76, 175, 80, 0.22);
-}
-
-.gg-summary-rule-tip {
-    font-size: 10px;
-    line-height: 1.55;
-    color: var(--g-tc);
-    opacity: 0.85;
-}
-
 .gg-sync-vector-zone {
     background: rgba(76, 175, 80, 0.1);
     border: 1px solid rgba(76, 175, 80, 0.3);
@@ -1425,8 +1339,7 @@
 }
 
 .gg-sync-vector-zone #lvm_c_sync_wi,
-.gg-sync-vector-zone #lvm_c_vector_enabled,
-.gg-sync-vector-zone #lvm_c_auto_vectorize {
+.gg-sync-vector-zone #lvm_c_vector_enabled {
     width: 14px !important;
     height: 14px !important;
     min-width: 14px !important;
@@ -1442,8 +1355,7 @@
 }
 
 .gg-sync-vector-zone #lvm_c_sync_wi::after,
-.gg-sync-vector-zone #lvm_c_vector_enabled::after,
-.gg-sync-vector-zone #lvm_c_auto_vectorize::after {
+.gg-sync-vector-zone #lvm_c_vector_enabled::after {
     left: 3px !important;
     top: 0 !important;
     width: 4px !important;
@@ -1814,10 +1726,6 @@
         padding: 8px;
     }
 
-    .gg-summary-rule-card {
-        margin-bottom: 8px;
-    }
-
     .gg-sync-vector-grid {
         grid-template-columns: 1fr;
         gap: 8px;
@@ -1873,50 +1781,6 @@
     .gg-sync-vector-grid {
         grid-template-columns: 1fr;
     }
-}
-
-/* ==========================================
-   📖 总结表（笔记本视图）隐藏状态样式
-   ========================================== */
-
-/* 隐藏状态的笔记本页面容器 */
-.g-book-view[style*="opacity: 0.5"]::before {
-    content: '已归档';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(-15deg);
-
-    /* 文字样式 */
-    font-size: 80px;
-    font-weight: 900;
-    letter-spacing: 10px;
-    white-space: nowrap;
-    user-select: none;
-    pointer-events: none;
-
-    /* 颜色：半透明红色，白天晚上都明显 */
-    color: rgba(220, 53, 69, 0.15);
-
-    /* 边框 */
-    border: 6px solid rgba(220, 53, 69, 0.2);
-    padding: 20px 60px;
-    border-radius: 15px;
-
-    z-index: 10;
-}
-
-/* 添加半透明遮罩 */
-.g-book-view[style*="opacity: 0.5"]::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.05);
-    pointer-events: none;
-    z-index: 5;
 }
 
 /* ========== ✨ 表格选择美化 (Card Grid) ========== */
@@ -2203,8 +2067,7 @@ th.g-col-ops {
 
 /* ========== 📱 手机端表格选择按钮修复 (Nuclear Fix) ========== */
 /* 强制显示手指光标 + 移除300ms延迟 + 确保层级 + 强制可点击 */
-#lvm_open_table_selector,
-#lvm_sum_open_table_selector {
+#lvm_open_table_selector {
     /* ✅ NUCLEAR FIX: Force these buttons to accept clicks on mobile */
     position: relative !important;
     /* Crucial for z-index to work */
@@ -2231,8 +2094,7 @@ th.g-col-ops {
 
 /* ✅ 修复后的子元素策略：让子元素不阻止事件，但不能设置 pointer-events: none */
 /* 因为 pointer-events: none 会导致移动端点击穿透 */
-#lvm_open_table_selector *,
-#lvm_sum_open_table_selector * {
+#lvm_open_table_selector * {
     /* 不设置 pointer-events，让事件正常冒泡到按钮 */
     user-select: none !important;
     /* 防止选中文字 */
@@ -2242,8 +2104,7 @@ th.g-col-ops {
 
 /* ========== 📋 表格选择弹窗模态框样式 (Modal Styles) ========== */
 /* 🔥 强制 overlay 显示在最上层，覆盖所有可能的父容器层叠上下文 */
-#gg-table-selector-overlay,
-#gg-sum-table-selector-overlay {
+#gg-table-selector-overlay {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;

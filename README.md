@@ -45,7 +45,7 @@ npm run check
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 ```
 
-自动测试覆盖稳定 ID、v2 往返、可见性、事务拒绝、十行主线 X=3、Embedding 失败回退、向量关闭回退、三分区 UI 入口和命名空间隔离。真实 SillyTavern 与真实 Embedding/Rerank API 仍需实机验收。
+26 项自动测试覆盖稳定 ID、v2 往返、可见性、事务拒绝、十行主线 X=3、Embedding 失败回退、向量关闭回退、旧总结死代码不回流、向量 UI 入口和命名空间隔离。真实 SillyTavern 与真实 Embedding/Rerank API 仍需实机验收。
 
 ## 安装与发布状态
 
@@ -59,6 +59,6 @@ https://github.com/LEASE-2473/LEASE-Vector-Memory
 
 这是与旧 `ST-Memory-Context` 完全独立的新扩展。首次测试前请停用旧填表插件，避免两个插件同时拦截请求。
 
-- 插件版本：4.2.7
+- 插件版本：4.2.10
 - 维护者：LEASE
 - 许可证：MIT，见 [LICENSE](LICENSE)

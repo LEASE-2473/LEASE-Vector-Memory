@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.2.7
+// LEASE Vector Memory v4.2.10
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.2.7 启动');
+    console.log('🚀 LEASE Vector Memory v4.2.10 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,13 +25,12 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.2.7';
+    const V = 'v4.2.10';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
     const CK = 'lvm_config';            // 通用配置存储键
     const CWK = 'lvm_col_widths';       // 列宽存储键
-    const SMK = 'lvm_summarized';       // 已总结行标记存储键
     const REPO_PATH = 'LEASE-2473/LEASE-Vector-Memory';
 
     // ===== UI主题配置 =====
@@ -50,15 +49,6 @@
         tableInjectionRestored: false, // v3.3 迁移标记：旧轻量版曾把 tableInj 强制关闭
         tablePos: 'system',
         tableDepth: 0,
-        autoSummary: true,             // ✅ 默认开启自动总结
-        autoSummaryFloor: 50,          // ✅ 50层触发
-        autoSummaryPrompt: true,       // ✅ 默认静默发起（不弹窗确认）
-        autoSummarySilent: true,       // ✅ 默认静默保存（不弹窗编辑）
-        autoSummaryTargetTables: [],   // 🆕 自动总结的目标表格索引（空数组表示全部）
-        manualSummaryTargetTables: [], // 🆕 手动总结控制台的目标表格索引（空数组表示全部）
-        autoSummaryDelay: true,        // ✅ 开启延迟
-        autoSummaryDelayCount: 4,      // ✅ 延迟4楼
-        summaryRowAction: 'hide',      // 总结后处理源行：keep / hide / delete
         autoBackfill: false,           // 自动批量填表总开关
         autoBackfillFloor: 10,         // 每 N 层批量填表一次
         autoBackfillPrompt: true,      // 触发前静默发起
@@ -72,7 +62,6 @@
         cloudSync: true,
         autoVectorizeColdRows: true,   // 行转冷时自动向量化
         coldPolicies: {},              // 逐表自动降冷策略
-        summaryRulePanelCollapsed: true, // 📁 记忆发送规则分区折叠状态（默认折叠）
         // ==================== 独立向量检索配置 ====================
         vectorEnabled: false,          // ❌ 默认关闭独立向量检索
         vectorPanelCollapsed: false,   // 📁 向量化分区折叠状态
@@ -85,7 +74,6 @@
         vectorSeparator: '===',        // 🆕 知识库文本切分符
         customTables: null,            // 用户自定义表格结构（格式同 DEFAULT_TABLES）
         reverseView: false,            // ❌ 默认关闭倒序显示（最新行在上）
-        reverseToc: false,             // 🆕 总结目录倒序显示开关
         sinkHiddenRows: false          // 🆕 沉淀已隐藏行（绿色行沉底）
     };
 
@@ -93,7 +81,11 @@
         'enabled', 'log', 'filterHistory', 'tablePosType',
         'autoBigSummary', 'autoBigSummaryFloor', 'autoBigSummaryFloorManual',
         'autoBigSummaryDelay', 'autoBigSummaryDelayCount', 'syncWorldInfo',
-        'syncWorldInfoPanelCollapsed', 'worldInfoVectorized', 'autoSummaryHideContext'
+        'syncWorldInfoPanelCollapsed', 'worldInfoVectorized', 'autoSummaryHideContext',
+        'autoSummary', 'autoSummaryFloor', 'autoSummaryPrompt', 'autoSummarySilent',
+        'autoSummaryTargetTables', 'manualSummaryTargetTables', 'autoSummaryDelay',
+        'autoSummaryDelayCount', 'summaryRowAction', 'summaryRulePanelCollapsed',
+        'reverseToc', 'autoVectorizeSummary'
     ];
 
     function sanitizeLeanConfig(sourceConfig = null) {
@@ -108,10 +100,6 @@
         }
         C.contextLimit = C.contextLimit !== false;
         C.contextLimitCount = Math.max(1, parseInt(C.contextLimitCount) || 30);
-        C.summaryRowAction = ['keep', 'hide', 'delete'].includes(C.summaryRowAction)
-            ? C.summaryRowAction
-            : 'hide';
-        API_CONFIG.summarySource = 'table';
         if (!C.coldPolicies || typeof C.coldPolicies !== 'object') C.coldPolicies = {};
         DEFAULT_TABLES.forEach((_table, index) => {
             const current = C.coldPolicies[index] || {};
@@ -124,7 +112,7 @@
     }
 
     // ==================== API配置对象 ====================
-    // 用于独立API调用（记忆表格总结）
+    // 用于批量填表与标签诊断的独立 API 调用。
     let API_CONFIG = {
         useIndependentAPI: false,
         provider: 'openai',
@@ -133,8 +121,6 @@
         model: 'gemini-2.5-pro',
         temperature: 1,
         maxTokens: 65536,
-        summarySource: 'table',    // 仅总结记忆表格
-        lastSummaryIndex: 0,
         lastBackfillIndex: 0,      // 手动剧情追溯进度
         useStream: true,           // ✅ 流式传输开关（默认开启）
         profiles: [],              // ☁️ API 账号预设列表
@@ -144,7 +130,8 @@
     function sanitizeApiConfig() {
         delete API_CONFIG.enableAI;
         delete API_CONFIG.lastBigSummaryIndex;
-        API_CONFIG.summarySource = 'table';
+        delete API_CONFIG.summarySource;
+        delete API_CONFIG.lastSummaryIndex;
     }
 
     const DEFAULT_API_TEMPERATURE = 1;
@@ -779,150 +766,6 @@
         });
     }
 
-    // ✅✅✅ [新增] 总结表删除选项弹窗
-    /**
-     * 总结表删除选项弹窗
-     * @param {number} currentPage - 当前页码（从1开始）
-     * @param {number} totalPages - 总页数
-     * @returns {Promise<string|null>} - 'current'=删除当前页, 'all'=删除全部, null=取消
-     */
-    function showDeleteOptionsDialog(currentPage, totalPages) {
-        return new Promise((resolve) => {
-            const id = 'delete-options-' + Date.now();
-
-            // 🌙 Dark Mode: 动态颜色
-            const isDark = UI.darkMode;
-            const dialogBg = isDark ? '#1e1e1e' : '#fff';
-            const bodyColor = isDark ? '#e0e0e0' : '#333';
-            const borderColor = isDark ? 'rgba(255,255,255,0.1)' : '#eee';
-
-            const $overlay = $('<div>', {
-                id: id,
-                css: {
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    width: '100vw', height: '100vh',
-                    background: 'rgba(0,0,0,0.6)', zIndex: 2147483647,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '20px', margin: 0
-                }
-            }).attr('style', function (i, s) { return s + 'z-index: 2147483647 !important;'; });
-
-            const $dialog = $('<div>', {
-                css: {
-                    background: dialogBg, borderRadius: '12px',
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-                    maxWidth: '500px', width: '90%',
-                    maxHeight: '80vh', overflow: 'auto'
-                }
-            });
-
-            const $header = $('<div>', {
-                css: {
-                    background: '#dc3545', // 红色警告背景
-                    color: '#ffffff',
-                    padding: '16px 20px', borderRadius: '12px 12px 0 0',
-                    fontSize: '16px', fontWeight: '600'
-                },
-                text: '🗑️ 删除总结'
-            });
-
-            const $body = $('<div>', {
-                css: {
-                    padding: '24px 20px', fontSize: '14px', lineHeight: '1.6',
-                    color: bodyColor
-                }
-            });
-
-            const infoText = $('<div>', {
-                css: { marginBottom: '16px', whiteSpace: 'pre-wrap' },
-                text: `当前第 ${currentPage} 页，共 ${totalPages} 页总结\n\n请选择删除范围：`
-            });
-
-            const $footer = $('<div>', {
-                css: {
-                    padding: '12px 20px',
-                    borderTop: `1px solid ${borderColor}`,
-                    textAlign: 'right',
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: '10px',
-                    flexWrap: 'wrap'
-                }
-            });
-
-            // 🎨 统一按钮基础样式（适配日夜模式 + 响应式）
-            const btnBaseStyle = {
-                border: 'none',
-                padding: '10px 16px',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                fontWeight: '600',
-                flex: '1',
-                minWidth: '100px',
-                textAlign: 'center',
-                whiteSpace: 'nowrap',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center'
-            };
-
-            const $cancelBtn = $('<button>', {
-                text: '✖️ 取消',
-                css: {
-                    ...btnBaseStyle,
-                    background: isDark ? 'rgba(108, 117, 125, 0.3)' : '#6c757d',
-                    color: '#ffffff',
-                    border: isDark ? '1px solid rgba(108, 117, 125, 0.5)' : 'none'
-                }
-            }).on('click', () => { $overlay.remove(); resolve(null); });
-
-            const $currentBtn = $('<button>', {
-                text: `📄 删除当前页`,
-                css: {
-                    ...btnBaseStyle,
-                    background: isDark ? 'rgba(255, 152, 0, 0.3)' : '#ff9800',
-                    color: '#ffffff',
-                    border: isDark ? '1px solid rgba(255, 152, 0, 0.6)' : 'none'
-                }
-            }).on('click', () => { $overlay.remove(); resolve('current'); });
-
-            const $allBtn = $('<button>', {
-                text: `🗑️ 删除全部`,
-                css: {
-                    ...btnBaseStyle,
-                    background: isDark ? 'rgba(220, 53, 69, 0.3)' : '#dc3545',
-                    color: '#ffffff',
-                    border: isDark ? '1px solid rgba(220, 53, 69, 0.6)' : 'none'
-                }
-            }).on('click', () => { $overlay.remove(); resolve('all'); });
-
-            // 悬停效果
-            $cancelBtn.hover(function () { $(this).css('filter', 'brightness(0.9)') }, function () { $(this).css('filter', 'brightness(1)') });
-            $currentBtn.hover(function () { $(this).css('filter', 'brightness(1.1)') }, function () { $(this).css('filter', 'brightness(1)') });
-            $allBtn.hover(function () { $(this).css('filter', 'brightness(1.1)') }, function () { $(this).css('filter', 'brightness(1)') });
-
-            $body.append(infoText);
-            $footer.append($cancelBtn, $currentBtn, $allBtn);
-            $dialog.append($header, $body, $footer);
-            $overlay.append($dialog);
-            $('body').append($overlay);
-
-            // ✅ 不允许点击遮罩层关闭，防止误操作
-            $(document).on('keydown.' + id, (e) => {
-                if (e.key === 'Escape') {
-                    $(document).off('keydown.' + id);
-                    $overlay.remove();
-                    resolve(null);
-                }
-            });
-        });
-    }
-
-    // ✅✅✅ [新增] 分批总结配置弹窗
-    // ✅✅✅ showBatchConfigDialog 已迁移到 summary_manager.js
-
     // ========================================================================
     // ========== 核心类定义：数据管理和存储 ==========
     // ========================================================================
@@ -1463,7 +1306,6 @@
                 summarizedRows = {};
                 userColWidths = {};
                 userRowHeights = {};
-                API_CONFIG.lastSummaryIndex = 0;
                 API_CONFIG.lastBackfillIndex = 0;
                 localStorage.setItem(AK, JSON.stringify(API_CONFIG));
 
@@ -1570,30 +1412,20 @@
 
                 // --- 1. 开关类 ---
                 C.autoBackfill = globalConfig.autoBackfill !== undefined ? globalConfig.autoBackfill : false;
-                C.autoSummary = globalConfig.autoSummary !== undefined ? globalConfig.autoSummary : true;
                 C.tableInj = globalConfig.tableInj !== undefined ? globalConfig.tableInj : true;
                 // --- 2. 数值类 ---
                 C.autoBackfillFloor = globalConfig.autoBackfillFloor !== undefined ? globalConfig.autoBackfillFloor : 10;
                 C.autoBackfillDelay = globalConfig.autoBackfillDelay !== undefined ? globalConfig.autoBackfillDelay : true;
                 C.autoBackfillDelayCount = globalConfig.autoBackfillDelayCount !== undefined ? globalConfig.autoBackfillDelayCount : 6;
-                C.autoSummaryFloor = globalConfig.autoSummaryFloor !== undefined ? globalConfig.autoSummaryFloor : 50;
-                C.autoSummaryDelay = globalConfig.autoSummaryDelay !== undefined ? globalConfig.autoSummaryDelay : true;
-                C.autoSummaryDelayCount = globalConfig.autoSummaryDelayCount !== undefined ? globalConfig.autoSummaryDelayCount : 4;
                 // --- 3. 其他 ---
                 C.autoBackfillPrompt = globalConfig.autoBackfillPrompt !== undefined ? globalConfig.autoBackfillPrompt : true;
                 C.autoBackfillSilent = globalConfig.autoBackfillSilent !== undefined ? globalConfig.autoBackfillSilent : true;
-                C.autoSummaryPrompt = globalConfig.autoSummaryPrompt !== undefined ? globalConfig.autoSummaryPrompt : true;
-                C.autoSummarySilent = globalConfig.autoSummarySilent !== undefined ? globalConfig.autoSummarySilent : true;
-                C.summaryRowAction = ['keep', 'hide', 'delete'].includes(globalConfig.summaryRowAction)
-                    ? globalConfig.summaryRowAction
-                    : 'hide';
                 C.filterTags = globalConfig.filterTags !== undefined ? globalConfig.filterTags : '';
                 C.filterTagsWhite = globalConfig.filterTagsWhite !== undefined ? globalConfig.filterTagsWhite : '';
                 C.filterTagPresets = Array.isArray(globalConfig.filterTagPresets) ? globalConfig.filterTagPresets : [];
                 C.filterTagActivePresetId = globalConfig.filterTagActivePresetId !== undefined ? globalConfig.filterTagActivePresetId : '';
                 C.contextLimit = globalConfig.contextLimit !== undefined ? globalConfig.contextLimit : true;
                 C.contextLimitCount = Math.max(1, parseInt(globalConfig.contextLimitCount) || 30);
-                C.summaryRulePanelCollapsed = globalConfig.summaryRulePanelCollapsed !== undefined ? globalConfig.summaryRulePanelCollapsed : true;
                 // ✅ 向量检索配置
                 C.vectorEnabled = globalConfig.vectorEnabled !== undefined ? globalConfig.vectorEnabled : false;
                 C.vectorPanelCollapsed = globalConfig.vectorPanelCollapsed !== undefined ? globalConfig.vectorPanelCollapsed : false;
@@ -1609,10 +1441,7 @@
                 sanitizeLeanConfig(globalConfig);
                 // ✅ 视图配置
                 C.reverseView = globalConfig.reverseView !== undefined ? globalConfig.reverseView : false;
-                C.reverseToc = globalConfig.reverseToc !== undefined ? globalConfig.reverseToc : false;
                 C.sinkHiddenRows = globalConfig.sinkHiddenRows !== undefined ? globalConfig.sinkHiddenRows : false;
-
-                API_CONFIG.summarySource = 'table';
 
                 console.log('🧹 [配置清洗] 内存状态已重置为全局/默认值，准备加载会话专属配置...');
             } catch (e) {
@@ -1645,7 +1474,6 @@
 
                 // 恢复进度
                 if (finalData.meta) {
-                    if (finalData.meta.lastSum !== undefined) API_CONFIG.lastSummaryIndex = finalData.meta.lastSum;
                     if (finalData.meta.lastBf !== undefined) API_CONFIG.lastBackfillIndex = finalData.meta.lastBf;
                     localStorage.setItem(AK, JSON.stringify(API_CONFIG));
                 }
@@ -1656,9 +1484,6 @@
                         'tableInj',
                         'autoBackfill', 'autoBackfillFloor', 'autoBackfillDelay',
                         'autoBackfillDelayCount', 'autoBackfillPrompt', 'autoBackfillSilent',
-                        'autoSummary', 'autoSummaryFloor', 'autoSummaryDelay',
-                        'autoSummaryDelayCount', 'autoSummaryPrompt', 'autoSummarySilent',
-                        'autoSummaryTargetTables', 'manualSummaryTargetTables', 'summaryRowAction',
                         'masterSwitch', 'contextLimit', 'contextLimitCount',
                         'filterTags', 'filterTagsWhite', 'filterTagPresets',
                         'filterTagActivePresetId', 'vectorEnabled', 'vectorUrl', 'vectorKey',
@@ -1668,10 +1493,6 @@
                     allowedConfigKeys.forEach(key => {
                         if (finalData.config[key] !== undefined) C[key] = finalData.config[key];
                     });
-                    C.summaryRowAction = ['keep', 'hide', 'delete'].includes(C.summaryRowAction)
-                        ? C.summaryRowAction
-                        : 'hide';
-                    API_CONFIG.summarySource = 'table';
                     console.log('✅ [每聊配置] 已恢复轻量版支持的设置');
                 }
 
@@ -2632,26 +2453,6 @@
         // 这样每个角色/会话都有独立的"已总结行"状态，不会串味
     }
 
-    function loadSummarizedRows() {
-        // ❌ 已废弃：不再从全局 LocalStorage 加载
-        // summarizedRows 现在通过 m.load() 从角色专属存档中恢复
-        // 切换会话时会自动重置为 {}，然后加载该会话的专属状态
-    }
-
-    function markAsSummarized(tableIndex, rowIndex) {
-        const row = m.get(tableIndex)?.r?.[rowIndex];
-        if (row) {
-            m.get(tableIndex)._ensureMeta(row).__lvm.cold = true;
-        }
-        if (!summarizedRows[tableIndex]) {
-            summarizedRows[tableIndex] = [];
-        }
-        if (!summarizedRows[tableIndex].includes(rowIndex)) {
-            summarizedRows[tableIndex].push(rowIndex);
-        }
-        saveSummarizedRows();
-    }
-
     function isSummarized(tableIndex, rowIndex) {
         const sheet = m.get(tableIndex);
         const row = sheet?.r?.[rowIndex];
@@ -3381,7 +3182,6 @@
                 if (parsed.c) UI.c = parsed.c;
                 if (parsed.tc) UI.tc = parsed.tc;
                 if (parsed.fs) UI.fs = parseInt(parsed.fs);
-                if (parsed.bookBg !== undefined) UI.bookBg = parsed.bookBg; // ✅ 读取背景图设置
                 if (parsed.darkMode !== undefined) UI.darkMode = parsed.darkMode; // ✅ 读取夜间模式设置
             }
         } catch (e) { console.warn('读取主题配置失败'); }
@@ -3428,16 +3228,6 @@
         const hoverBg = `rgba(${rgbStr}, 0.08)`;
         const shadowColor = `rgba(${rgbStr}, 0.3)`;
 
-        // ✅ 优化后的默认背景：米白色+微噪点质感（不刺眼，更像纸）
-        const bookBgImage = UI.bookBg
-            ? `url("${UI.bookBg}")`
-            : `linear-gradient(to bottom, #f9fbff, #f2f5fa)`;
-
-        // 🌙【新增】定义深色纸张背景（深灰渐变 + 噪点）
-        const bookBgImageDark = UI.bookBg
-            ? `url("${UI.bookBg}")` // 如果用户自定义了图，就保持用户的
-            : `linear-gradient(to bottom, #2b2b2b, #1a1a1a)`;
-
         // ✅ 🌙 Dark Mode: 动态变量定义 (深色毛玻璃版)
         const isDark = UI.darkMode;
         // 固定列必须使用不透明背景，否则横向滚动时下方数据会透过行号/来源列显示。
@@ -3448,15 +3238,6 @@
         const bg_button_hover = isDark ? `rgba(${rgbStr}, 0.34)` : `rgba(${rgbStr}, 0.34)`;
         const bg_button_active = isDark ? `rgba(${rgbStr}, 0.46)` : `rgba(${rgbStr}, 0.44)`;
         const bg_tab_idle = isDark ? `rgba(${rgbStr}, 0.20)` : `rgba(${rgbStr}, 0.16)`;
-        const book_surface = isDark ? '#20242b' : '#f6f8fc';
-        const book_ink = isDark ? '#dbe2ee' : '#2e3642';
-        const book_sub_ink = isDark ? '#bbc4d3' : '#5c6678';
-        const book_line = isDark ? 'rgba(219, 226, 238, 0.22)' : 'rgba(46, 54, 66, 0.18)';
-        const book_btn_bg = isDark ? 'rgba(219, 226, 238, 0.10)' : 'rgba(46, 54, 66, 0.08)';
-        const book_btn_hover = isDark ? 'rgba(219, 226, 238, 0.16)' : 'rgba(46, 54, 66, 0.14)';
-        const bg_book_content = isDark ? `rgba(${rgbStr}, 0.10)` : `rgba(${rgbStr}, 0.12)`;
-        const bg_book_content_hover = isDark ? `rgba(${rgbStr}, 0.14)` : `rgba(${rgbStr}, 0.18)`;
-        const bg_book_content_focus = isDark ? `rgba(${rgbStr}, 0.20)` : `rgba(${rgbStr}, 0.24)`;
         // 窗口背景：降低透明度到 0.75，让模糊效果透出来，颜色改为深灰黑
         const bg_window = isDark ? 'rgba(30, 30, 30, 0.75)' : 'rgba(255, 255, 255, 0.75)';
         // 面板背景：不再用实色，改为半透明黑，叠加在窗口上增加层次感
@@ -3471,17 +3252,14 @@
         const bg_table_cell = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.5)'; // 单元格极淡
         const bg_edit_focus = isDark ? 'rgba(60, 60, 60, 0.9)' : 'rgba(255, 249, 230, 0.95)';
         const bg_edit_hover = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 251, 240, 0.9)';
-        const bg_book_edit_focus = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.36)';
-        const bg_book_edit_hover = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.18)';
         const bg_row_num = isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(200, 200, 200, 0.4)';
-        const bg_summarized = isDark ? 'rgba(40, 167, 69, 0.25)' : 'rgba(40, 167, 69, 0.15)';
 
 
 
         const style = `
         /* 1. 字体与重置 */
         #gai-main-pop div, #gai-main-pop p, #gai-main-pop span, #gai-main-pop td, #gai-main-pop th, #gai-main-pop button, #gai-main-pop input, #gai-main-pop select, #gai-main-pop textarea, #gai-main-pop h3, #gai-main-pop h4,
-        #gai-edit-pop *, #gai-summary-pop *, #gai-about-pop * {
+        #gai-edit-pop *, #gai-about-pop * {
             font-family: "Segoe UI", Roboto, "Helvetica Neue", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
             line-height: 1.5;
             -webkit-font-smoothing: auto;
@@ -3527,7 +3305,6 @@
 
         /* 🌙 强制所有弹窗容器使用动态背景色 (覆盖 style.css 的固定白色) */
         #gai-backfill-pop .g-w,
-        #gai-summary-pop .g-w,
         #gai-edit-pop .g-w,
         #gai-about-pop .g-w {
             background: ${bg_window} !important;
@@ -3825,10 +3602,6 @@
         .g-e:focus { outline: 2px solid ${bg_header} !important; outline-offset: -2px; background: ${bg_edit_focus} !important; /* 🌙 动态背景 */ box-shadow: 0 4px 12px ${shadowColor} !important; z-index: 10; position: relative; overflow-y: auto !important; align-items: flex-start !important; }
         .g-e:hover { background: ${bg_edit_hover} !important; /* 🌙 动态背景 */ box-shadow: inset 0 0 0 1px var(--g-c); }
 
-        /* 📖 总结笔记本：去除米黄色聚焦底，改为中性玻璃白 */
-        .g-book-view .g-e:hover { background: ${bg_book_edit_hover} !important; box-shadow: none !important; }
-        .g-book-view .g-e:focus { background: ${bg_book_edit_focus} !important; box-shadow: none !important; outline: 1px solid ${color_border} !important; outline-offset: -1px !important; }
-        
         /* 1. 基础状态：强制背景色和文字颜色 */
         #gai-main-pop input[type="number"], #gai-main-pop input[type="text"], #gai-main-pop input[type="password"], #gai-main-pop select, #gai-main-pop textarea { 
             background: ${bg_input} !important; 
@@ -3899,146 +3672,6 @@
             .g-col-resizer { width: 20px !important; right: -10px !important; }
         }
 
-        /* 📖 优化的笔记本样式（中性灰白主题） */
-        .g-book-view {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            background-color: ${book_surface};
-            background-image: ${bookBgImage} !important;
-            background-size: cover !important;
-            background-position: center !important;
-            background-repeat: no-repeat !important;
-            box-shadow: none;
-            padding: 30px 50px;
-            box-sizing: border-box;
-            font-family: "Georgia", "Songti SC", "SimSun", serif;
-            color: ${book_ink};
-            position: relative;
-            overflow: hidden;
-        }
-
-        /* 头部：包含标题和翻页按钮 */
-        .g-book-header {
-            margin-bottom: 10px;
-            border-bottom: 2px solid ${book_line};
-            padding-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap; /* 允许换行，这对手机很重要 */
-            gap: 10px;
-        }
-
-        .g-book-title {
-            font-size: 18px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            color: ${book_ink};
-            margin: 0;
-            min-width: 100px;
-        }
-
-        .g-book-content {
-            flex: 1;
-            overflow-y: auto;
-            line-height: 1.8;
-            font-size: 15px;
-            color: ${book_ink};
-            outline: none;
-            white-space: pre-wrap;
-            text-align: justify;
-            padding-right: 10px;
-            /* 隐藏滚动条 */
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        .g-book-content::-webkit-scrollbar { display: none; }
-
-        /* 控制栏：现在移到了顶部，样式要变简洁 */
-        .g-book-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            color: ${book_sub_ink};
-            margin: 0;
-            padding: 0;
-            border: none;
-            flex: 1;
-            justify-content: flex-end; /* 靠右对齐 */
-        }
-
-        .g-book-btn {
-            border: 1px solid ${book_line};
-            background: ${book_btn_bg};
-            cursor: pointer;
-            font-size: 13px;
-            color: ${book_sub_ink};
-            padding: 4px 10px;
-            border-radius: 4px;
-            transition: all 0.2s;
-            display: flex; align-items: center; gap: 5px;
-        }
-
-        .g-book-btn:hover:not(:disabled) {
-            background: ${book_btn_hover};
-            transform: translateY(-1px);
-        }
-
-        .g-book-btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            background: transparent;
-        }
-
-        .g-book-page-num { font-weight: bold; font-family: monospace; color: ${book_sub_ink}; }
-
-        .g-book-view .g-e {
-            position: relative !important;
-            height: auto !important;
-            width: auto !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-
-        .g-book-content.g-e {
-            padding: 10px 20px !important;
-            min-height: 200px !important;
-            box-shadow: none !important;
-            border-left: none !important;
-            border-right: none !important;
-            background: ${bg_book_content} !important;
-            border-radius: 8px !important;
-        }
-        .g-book-content.g-e:hover { background: ${bg_book_content_hover} !important; }
-        .g-book-content.g-e:focus { background: ${bg_book_content_focus} !important; }
-
-        .g-book-meta-container {
-            background: linear-gradient(to bottom, ${book_btn_bg}, transparent);
-            border-bottom: 1px solid ${book_line};
-            padding: 8px 12px;
-            margin: -5px 0 15px 0 !important;
-            border-radius: 4px;
-        }
-
-        .g-book-meta-tags { display: flex; flex-wrap: wrap; gap: 8px; line-height: 1.5; }
-        
-        .g-book-meta-tag {
-            font-size: 11px; padding: 2px 8px; background: ${book_btn_bg};
-            border-radius: 4px; color: ${book_sub_ink}; border: 1px solid ${book_line};
-            font-family: "Georgia", "Songti SC", serif; display: inline-flex; align-items: center; gap: 4px;
-        }
-        
-        .g-book-meta-label { font-weight: 600; color: ${book_sub_ink}; font-size: 11px; }
-
-        .g-book-page-input {
-            width: 45px; text-align: center; font-weight: bold; font-family: monospace;
-            color: ${book_sub_ink}; border: 1px solid ${book_line}; border-radius: 4px; padding: 2px 0;
-            background: ${bg_button_glass}; font-size: 12px;
-        }
-
         /* 📱 手机端最终修复：限制高度，强制内部滚动 */
         @media (max-width: 600px) {
             /* 0. 遮罩容器：改为垂直居中，并给安全区留白 */
@@ -4071,62 +3704,6 @@
                 flex-direction: column !important;
             }
 
-            /* 3. 笔记本容器：禁止撑开，强制压缩 */
-            .g-book-view {
-                flex: 1 !important; 
-                height: 100% !important; 
-                min-height: 0 !important; /* 魔法属性：允许被压缩 */
-                padding: 5px 12px 10px 12px !important; 
-                display: flex !important; 
-                flex-direction: column !important; 
-                overflow: hidden !important; 
-                box-shadow: none !important;
-            }
-
-            /* 4. 头部固定 */
-            .g-book-header {
-                flex-shrink: 0 !important; /* 头部不许缩放 */
-                flex-direction: column !important;
-                align-items: stretch !important;
-                gap: 8px !important;
-                padding-bottom: 5px !important;
-                margin-bottom: 5px !important;
-            }
-
-            .g-book-title {
-                font-size: 16px !important;
-                text-align: center;
-            }
-
-            /* 控制栏 */
-            .g-book-controls {
-                width: 100% !important;
-                justify-content: space-between !important;
-                border-top: 1px dashed #cbb0a1 !important;
-                padding-top: 5px !important;
-                flex-shrink: 0 !important;
-            }
-
-            .g-book-btn {
-                flex: 1 !important;
-                justify-content: center !important;
-                padding: 6px !important;
-            }
-
-            /* 5. 文本框：这就是你要改的地方 */
-            .g-book-content.g-e {
-                flex: 1 1 auto !important; 
-                height: 100% !important; 
-                min-height: 0 !important; /* 关键：允许比内容矮 */
-                
-                padding: 5px 5px 60px 5px !important; /* 底部留白60px，防止字被挡住 */
-                font-size: 14px !important;
-
-                /* 强制开启滚动条 */
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-                -webkit-overflow-scrolling: touch !important;
-            }
         }
 
        /* ============================================
@@ -4143,9 +3720,9 @@
             body > div[style*="fixed"] input[type="number"],
             body > div[style*="fixed"] select,
             /* 覆盖弹窗内的输入框 */
-            #bf-popup-editor, #summary-editor, #opt-result-editor,
+            #bf-popup-editor, #opt-result-editor,
             #bf-custom-prompt, #opt-prompt, #bf-target-table,
-            #opt-target, #opt-range-input, #summary-note {
+            #opt-target, #opt-range-input {
                 background-color: rgba(0, 0, 0, 0.4) !important; /* 半透明黑 */
                 color: ${color_text} !important;
                 border: 1px solid rgba(255, 255, 255, 0.15) !important;
@@ -4181,31 +3758,29 @@
             }
 
             /* ✅ 修复：表格选择弹窗内的按钮（跟随主题表头颜色） */
-            #lvm_modal_select_all, #lvm_modal_deselect_all, #lvm_modal_cancel,
-            #lvm_sum_modal_select_all, #lvm_sum_modal_deselect_all, #lvm_sum_modal_cancel {
+            #lvm_modal_select_all, #lvm_modal_deselect_all, #lvm_modal_cancel {
                 background-color: ${bg_header} !important;
                 color: ${color_text} !important;
                 border-color: ${color_border} !important;
             }
 
-            #lvm_modal_select_all:hover, #lvm_modal_deselect_all:hover, #lvm_modal_cancel:hover,
-            #lvm_sum_modal_select_all:hover, #lvm_sum_modal_deselect_all:hover, #lvm_sum_modal_cancel:hover {
+            #lvm_modal_select_all:hover, #lvm_modal_deselect_all:hover, #lvm_modal_cancel:hover {
                 filter: brightness(1.1) !important;
             }
 
             /* 确定保存按钮使用主题色，确保文字可见 */
-            #lvm_modal_save, #lvm_sum_modal_save {
+            #lvm_modal_save {
                 background-color: ${bg_header} !important;
                 color: ${color_text} !important;
                 border-color: ${color_border} !important;
             }
 
-            #lvm_modal_save:hover, #lvm_sum_modal_save:hover {
+            #lvm_modal_save:hover {
                 filter: brightness(1.1) !important;
             }
 
             /* ✅ 修复：配置页面的表格选择按钮（跟随主题表头颜色） */
-            #lvm_open_table_selector, #lvm_sum_open_table_selector {
+            #lvm_open_table_selector {
                 background-color: ${bg_header} !important;
                 color: ${color_text} !important;
                 border-color: ${color_border} !important;
@@ -4223,21 +3798,21 @@
             }
 
             /* 📱 确保按钮内部元素不阻止事件传播 */
-            #lvm_open_table_selector *, #lvm_sum_open_table_selector * {
+            #lvm_open_table_selector * {
                 pointer-events: none !important;
             }
 
-            #lvm_open_table_selector:hover, #lvm_sum_open_table_selector:hover {
+            #lvm_open_table_selector:hover {
                 filter: brightness(1.1) !important;
             }
 
             /* ✅ 修复：弹窗关闭按钮（跟随主题文字颜色） */
-            #lvm_modal_close_btn, #lvm_sum_modal_close_btn {
+            #lvm_modal_close_btn {
                 color: ${color_text} !important;
                 opacity: 0.7 !important;
             }
 
-            #lvm_modal_close_btn:hover, #lvm_sum_modal_close_btn:hover {
+            #lvm_modal_close_btn:hover {
                 opacity: 1 !important;
             }
 
@@ -4247,8 +3822,7 @@
             /* 针对白色背景的 div，强制改为深色半透明 */
             .g-ov > div[style*="background"][style*="#fff"],
             .g-ov > div[style*="background"][style*="rgb(255, 255, 255)"],
-            body > div[style*="fixed"] div[style*="background:#fff"],
-            .summary-action-box {
+            body > div[style*="fixed"] div[style*="background:#fff"] {
                 background: rgba(30, 30, 30, 0.85) !important; /* 核心窗口背景 */
                 backdrop-filter: blur(20px) saturate(180%) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -4260,8 +3834,7 @@
             .g-p div[style*="background:rgba(255,255,255"],
             .g-p div[style*="background:#fff"],
             #lvm_api_config_section,
-            #lvm_auto_bf_settings,
-            #lvm_auto_sum_settings {
+            #lvm_auto_bf_settings {
                 background: rgba(255, 255, 255, 0.05) !important; /* 微微提亮 */
                 border-color: rgba(255, 255, 255, 0.1) !important;
             }
@@ -4283,8 +3856,7 @@
             /* ========== 4. 按钮样式微调 ========== */
             /* 取消按钮/灰色按钮 */
             button[style*="background:#6c757d"],
-            button[style*="background: #6c757d"],
-            .summary-action-keep {
+            button[style*="background: #6c757d"] {
                 background: rgba(255, 255, 255, 0.15) !important;
                 color: ${color_text} !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -4294,9 +3866,8 @@
             }
 
             /* ========== 5. 强制覆盖 specific ID 的弹窗背景 ========== */
-            /* 这一步确保总结、追溯等弹窗也是毛玻璃 */
+            /* 这一步确保追溯等弹窗也是毛玻璃 */
             #gai-backfill-pop .g-w,
-            #gai-summary-pop .g-w,
             #gai-edit-pop .g-w,
             #gai-about-pop .g-w {
                 background: rgba(30, 30, 30, 0.75) !important; /* 与主窗口一致 */
@@ -4304,8 +3875,7 @@
             }
             
             /* 配置页面的背景板 */
-            #gai-backfill-pop .g-p,
-            #gai-summary-pop .g-p {
+            #gai-backfill-pop .g-p {
                 background: transparent !important; /* 让它透出 g-w 的毛玻璃 */
             }
 
@@ -4323,148 +3893,7 @@
                 background: rgba(255, 255, 255, 0.1) !important;
             }
 
-            /* ========== 7. 笔记本模式 (Notebook) ========== */
-            /* 保持深色纸张质感，但也加深阴影 */
-            .g-book-view {
-                background-image: ${bookBgImageDark} !important;
-                background-color: #1a1a1a !important;
-                color: ${color_text} !important;
-                box-shadow: none !important;
-            }
-            .g-book-btn {
-                background: rgba(255, 255, 255, 0.05) !important;
-                color: ${color_text} !important;
-            }
-            .g-book-meta-tag {
-                background: rgba(255, 255, 255, 0.05) !important;
-                border-color: rgba(255, 255, 255, 0.1) !important;
-                color: #ccc !important;
-            }
         ` : ''}
-
-        /* ========== 📚 侧边目录样式 ========== */
-        /* 目录容器 */
-        .g-book-toc-panel {
-            position: absolute;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            width: 260px;
-            background: ${bg_window};
-            z-index: 100;
-            box-shadow: none;
-            transform: translateX(-100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s;
-            opacity: 0;
-            display: flex;
-            flex-direction: column;
-            backdrop-filter: blur(10px);
-            border-right: 1px solid ${color_border};
-            pointer-events: none;
-        }
-
-        /* 展开状态 */
-        .g-book-toc-panel.active {
-            transform: translateX(0);
-            opacity: 1;
-            box-shadow: 4px 0 15px rgba(0,0,0,0.2);
-            pointer-events: auto;
-        }
-
-        /* 目录头部 */
-        .g-toc-header {
-            padding: 15px;
-            border-bottom: 1px solid ${color_border};
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: ${color_text};
-            flex-shrink: 0;
-        }
-
-        /* 目录列表区 */
-        .g-toc-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-            padding-bottom: 60px;
-        }
-
-        /* 单个目录项 */
-        .g-toc-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            background: ${bg_table_cell};
-            cursor: pointer;
-            border: 1px solid ${color_border};
-            transition: all 0.2s;
-        }
-
-        .g-toc-item:hover {
-            background: ${bg_header};
-            transform: translateX(4px);
-            border-color: ${color_text};
-        }
-
-        /* 当前页高亮 */
-        .g-toc-item.active {
-            background: ${bg_header};
-            border: 2px solid ${color_text};
-            filter: brightness(1.1);
-            color: ${color_text};
-            font-weight: bold;
-        }
-
-        .g-toc-title {
-            font-size: 13px;
-            font-weight: bold;
-            margin-bottom: 4px;
-            color: ${color_text};
-        }
-
-        .g-toc-meta {
-            font-size: 10px;
-            opacity: 0.8;
-            margin-bottom: 4px;
-            display: inline-block;
-            background: rgba(0,0,0,0.1);
-            padding: 2px 6px;
-            border-radius: 3px;
-        }
-
-        .g-toc-preview {
-            font-size: 11px;
-            opacity: 0.7;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        /* 遮罩层 (点击空白关闭) */
-        .g-toc-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.3);
-            z-index: 99;
-            display: none;
-        }
-
-        .g-toc-overlay.active {
-            display: block;
-        }
-
-        /* 📱 移动端适配 */
-        @media (max-width: 768px) {
-            .g-book-toc-panel {
-                width: 80vw;
-                max-width: 300px;
-            }
-        }
     `;
 
         $('#gaigai-theme').remove();
@@ -4718,161 +4147,6 @@
         }
     }
 
-    /**
-     * 渲染笔记本视图（用于最后一个表格，即总结表）
-     * @param {Object} sheet - 表格数据对象
-     * @param {number} tableIndex - 表格索引
-     * @returns {string} - 返回笔记本视图的HTML字符串
-     */
-    /**
-     * 渲染笔记本视图（用于最后一个表格，即总结表）
-     * 📱 修复版：将翻页按钮移到顶部，防止手机端看不见
-     */
-    function renderBookUI(sheet, tableIndex) {
-        const v = tableIndex === 0 ? '' : 'display:none;';
-
-        // 1. 空数据状态
-        if (!sheet.r || sheet.r.length === 0) {
-            return `<div class="g-tbc" data-i="${tableIndex}" style="${v}">
-                <div class="g-book-view" style="justify-content:center; align-items:center; color:var(--g-tc);">
-                    <i class="fa-solid fa-book-open" style="font-size:48px; margin-bottom:10px; opacity:0.5;"></i>
-                    <div>暂无记忆总结</div>
-                    <div style="font-size:12px; margin-top:5px;">(请点击上方"总结"按钮生成)</div>
-                </div>
-            </div>`;
-        }
-
-        // 2. 修正页码
-        if (currentBookPage >= sheet.r.length) currentBookPage = sheet.r.length - 1;
-        if (currentBookPage < 0) currentBookPage = 0;
-
-        // ✨✨✨ 生成目录 HTML ✨✨✨
-        let tocItemsArr = [];
-        sheet.r.forEach((r, idx) => {
-            const tTitle = r[0] || '无标题';
-            const tContent = (r[1] || '').substring(0, 30);
-            const tContentDisplay = tContent ? tContent + (r[1].length > 30 ? '...' : '') : '(暂无内容)';
-            const tNote = r[2] ? `<div class="g-toc-meta">📌 ${esc(r[2])}</div>` : '';
-            const activeClass = idx === currentBookPage ? ' active' : '';
-
-            tocItemsArr.push(`
-                <div class="g-toc-item${activeClass}" data-page="${idx}" data-ti="${tableIndex}">
-                    <div class="g-toc-title">${idx + 1}. ${esc(tTitle)}</div>
-                    ${tNote}
-                    <div class="g-toc-preview">${esc(tContentDisplay)}</div>
-                </div>`);
-        });
-
-        // 根据配置决定是否倒序
-        if (C.reverseToc) {
-            tocItemsArr.reverse();
-        }
-        let tocItems = tocItemsArr.join('');
-
-        const tocHtml = `
-            <div class="g-toc-overlay" id="gai-toc-overlay-${tableIndex}"></div>
-            <div class="g-book-toc-panel" id="gai-book-toc-${tableIndex}">
-                <div class="g-toc-header">
-                    <span>📚 目录导航</span>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <button class="g-toc-move-btn up" data-ti="${tableIndex}" style="background:rgba(0,0,0,0.1); border:none; border-radius:4px; cursor:pointer; font-size:11px; color:inherit; padding:4px 8px;" title="上移当前页">↑</button>
-                        <button class="g-toc-move-btn down" data-ti="${tableIndex}" style="background:rgba(0,0,0,0.1); border:none; border-radius:4px; cursor:pointer; font-size:11px; color:inherit; padding:4px 8px;" title="下移当前页">↓</button>
-                        <button class="g-toc-sort-btn" data-ti="${tableIndex}" style="background:rgba(0,0,0,0.1); border:none; border-radius:4px; cursor:pointer; font-size:11px; color:inherit; padding:4px 8px;" title="切换排序">
-                            ${C.reverseToc ? '🔽 倒序' : '🔼 正序'}
-                        </button>
-                        <button id="gai-toc-close-${tableIndex}" style="background:none;border:none;cursor:pointer;font-size:20px;color:inherit;padding:0;">×</button>
-                    </div>
-                </div>
-                <div class="g-toc-list">
-                    ${tocItems}
-                </div>
-            </div>
-        `;
-
-        const isHidden = isSummarized(tableIndex, currentBookPage);
-        const row = sheet.r[currentBookPage];
-        const title = row[0] || '无标题';
-        const content = row[1] || '';
-
-        // 3. 样式处理
-        const hiddenStyle = isHidden ? 'opacity: 0.5; position: relative;' : 'position: relative;';
-        const watermark = '';
-
-        // 4. 元数据栏（日期等）
-        let metaSection = '';
-        if (sheet.c && sheet.c.length > 2) {
-            const metaItems = [];
-            for (let i = 2; i < sheet.c.length; i++) {
-                const colName = sheet.c[i];
-                const colValue = row[i] || '';
-                const displayValue = colValue || '(空)';
-                const opacityStyle = colValue ? '' : 'opacity:0.5; font-style:italic;';
-
-                metaItems.push(`
-                    <div class="g-book-meta-tag">
-                        <span class="g-book-meta-label">${esc(colName)}:</span>
-                        <span class="g-e" contenteditable="true" spellcheck="false"
-                              data-ti="${tableIndex}" data-r="${currentBookPage}" data-c="${i}"
-                              style="${opacityStyle}"
-                              title="点击编辑">${esc(displayValue)}</span>
-                    </div>
-                `);
-            }
-            if (metaItems.length > 0) {
-                metaSection = `<div class="g-book-meta-container"><div class="g-book-meta-tags">${metaItems.join('')}</div></div>`;
-            }
-        }
-
-        // 5. 准备控制栏（按钮组）
-        const totalPages = sheet.r.length;
-        const canPrev = currentBookPage > 0;
-        const canNext = currentBookPage < totalPages - 1;
-
-        const controlsHtml = `
-            <div class="g-book-controls">
-                <button class="g-book-btn g-book-toc-toggle" data-ti="${tableIndex}" style="margin-right:auto;">
-                    <i class="fa-solid fa-list"></i> 目录
-                </button>
-
-                <button class="g-book-btn g-book-prev" data-ti="${tableIndex}" ${!canPrev ? 'disabled' : ''}>
-                    <i class="fa-solid fa-arrow-left"></i> 上一篇
-                </button>
-
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <input type="number" class="g-book-page-input" id="gai-book-page-jump"
-                           value="${currentBookPage + 1}" min="1" max="${totalPages}"
-                           data-ti="${tableIndex}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                    <span>/ ${totalPages}</span>
-                </div>
-
-                <button class="g-book-btn g-book-next" data-ti="${tableIndex}" ${!canNext ? 'disabled' : ''}>
-                    下一篇 <i class="fa-solid fa-arrow-right"></i>
-                </button>
-            </div>
-        `;
-
-        // 6. 组合HTML：注意 controlsHtml 被放到了 g-book-header 里面
-        return `<div class="g-tbc" data-i="${tableIndex}" style="${v}">
-            <div class="g-book-view" style="${hiddenStyle}; position: relative;">
-                ${tocHtml}
-                ${watermark}
-                
-                <!-- 头部：标题 + 按钮 -->
-                <div class="g-book-header">
-                    <div class="g-book-title g-e" contenteditable="true" spellcheck="false"
-                         data-ti="${tableIndex}" data-r="${currentBookPage}" data-c="0">${esc(title)}</div>
-                    
-                    ${controlsHtml} <!-- 按钮在这里！ -->
-                </div>
-
-                ${metaSection}
-
-                <div class="g-book-content g-e" contenteditable="true" spellcheck="false"
-                     data-ti="${tableIndex}" data-r="${currentBookPage}" data-c="1">${esc(content)}</div>
-            </div>
-        </div>`;
-    }
-
     function gtb(s, ti) {
         // v4 所有表均使用统一表格视图，手工记忆不再伪装成总结笔记本。
         const v = ti === 0 ? '' : 'display:none;';
@@ -5000,7 +4274,6 @@
     let selectedRow = null;
     let selectedTableIndex = null;
     let selectedRows = [];
-    let currentBookPage = 0; // 记忆总结表的当前页码
     let lastActiveTabIndex = 0; // ✨ 保存上一次激活的标签索引，用于返回时恢复
     function bnd() {
         // 切换标签
@@ -5070,219 +4343,6 @@
                 localStorage.setItem('lvm_toolbar_collapsed', 'false');
             }
         });
-
-        // =========================================================
-        // 📖 笔记本模式翻页事件绑定
-        // =========================================================
-        // 上一页按钮
-        $('#gai-main-pop').off('click', '.g-book-prev').on('click', '.g-book-prev', function () {
-            const ti = parseInt($(this).data('ti'));
-            if (currentBookPage > 0) {
-                currentBookPage--;
-                refreshBookView(ti);
-            }
-        });
-
-        // 下一页按钮
-        $('#gai-main-pop').off('click', '.g-book-next').on('click', '.g-book-next', function () {
-            const ti = parseInt($(this).data('ti'));
-            const sheet = m.get(ti);
-            if (sheet && currentBookPage < sheet.r.length - 1) {
-                currentBookPage++;
-                refreshBookView(ti);
-            }
-        });
-
-        // 笔记本视图内容编辑保存（复用现有的blur保存逻辑）
-        $('#gai-main-pop').off('blur', '.g-book-view .g-e[contenteditable="true"]')
-            .on('blur', '.g-book-view .g-e[contenteditable="true"]', function () {
-                const $this = $(this);
-                const r = parseInt($this.data('r'));
-                const c = parseInt($this.data('c'));
-                const ti = parseInt($this.data('ti'));
-                const newVal = $this.text();
-
-                const sh = m.get(ti);
-                if (sh && sh.r[r]) {
-                    sh.r[r][c] = newVal;
-                    m.save(true, true); // 笔记本视图编辑立即保存
-                }
-            });
-
-        // ✅ 页码跳转输入框事件绑定
-        $('#gai-main-pop').off('change', '#gai-book-page-jump').on('change', '#gai-book-page-jump', function () {
-            const ti = parseInt($(this).data('ti'));
-            const sheet = m.get(ti);
-            if (!sheet) return;
-
-            let targetPage = parseInt($(this).val());
-            // 限制范围：1 到 总页数
-            if (targetPage < 1) targetPage = 1;
-            if (targetPage > sheet.r.length) targetPage = sheet.r.length;
-
-            // 更新当前页码（注意转换为索引）
-            currentBookPage = targetPage - 1;
-            refreshBookView(ti);
-        });
-
-        // 阻止输入框的回车键冒泡（防止触发其他快捷键）
-        $('#gai-main-pop').off('keydown', '#gai-book-page-jump').on('keydown', '#gai-book-page-jump', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                $(this).blur(); // 触发 change 事件
-            }
-        });
-
-        // =========================================================
-        // 📚 侧边目录事件绑定
-        // =========================================================
-        // 1. 打开目录：点击"目录"按钮
-        $('#gai-main-pop').off('click', '.g-book-toc-toggle').on('click', '.g-book-toc-toggle', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const ti = parseInt($(this).data('ti'));
-            $(`#gai-book-toc-${ti}`).addClass('active');
-            $(`#gai-toc-overlay-${ti}`).addClass('active');
-        });
-
-        // 2. 关闭目录：点击遮罩层
-        $('#gai-main-pop').off('click', '.g-toc-overlay').on('click', '.g-toc-overlay', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const $overlay = $(this);
-            const overlayId = $overlay.attr('id');
-            const ti = overlayId.replace('gai-toc-overlay-', '');
-            $(`#gai-book-toc-${ti}`).removeClass('active');
-            $overlay.removeClass('active');
-        });
-
-        // 3. 关闭目录：点击关闭按钮
-        $('#gai-main-pop').off('click', '[id^="gai-toc-close-"]').on('click', '[id^="gai-toc-close-"]', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const closeId = $(this).attr('id');
-            const ti = closeId.replace('gai-toc-close-', '');
-            $(`#gai-book-toc-${ti}`).removeClass('active');
-            $(`#gai-toc-overlay-${ti}`).removeClass('active');
-        });
-
-        // 4. 跳转页面：点击目录项
-        $('#gai-main-pop').off('click', '.g-toc-item').on('click', '.g-toc-item', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const targetPage = parseInt($(this).data('page'));
-            const ti = parseInt($(this).data('ti'));
-
-            // 更新当前页码
-            currentBookPage = targetPage;
-
-            // 刷新笔记本视图
-            refreshBookView(ti);
-
-            // 自动关闭目录（移动端体验优化）
-            $(`#gai-book-toc-${ti}`).removeClass('active');
-            $(`#gai-toc-overlay-${ti}`).removeClass('active');
-        });
-
-        // 5. 切换目录排序
-        $('#gai-main-pop').off('click', '.g-toc-sort-btn').on('click', '.g-toc-sort-btn', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const ti = parseInt($(this).data('ti'));
-
-            // 切换状态并保存配置
-            C.reverseToc = !C.reverseToc;
-            try { localStorage.setItem('lvm_config', JSON.stringify(C)); } catch (err) { }
-            if (typeof window.LeaseVectorMemory.saveAllSettingsToCloud === 'function') {
-                window.LeaseVectorMemory.saveAllSettingsToCloud().catch(() => { });
-            }
-
-            // 刷新视图
-            refreshBookView(ti);
-
-            // 刷新后 HTML 会被替换，目录面板会自动关闭，所以我们需要在短暂延迟后重新自动打开它
-            setTimeout(() => {
-                $(`#gai-book-toc-${ti}`).addClass('active');
-                $(`#gai-toc-overlay-${ti}`).addClass('active');
-            }, 50);
-        });
-
-        // 6. 移动目录页（上移/下移）
-        $('#gai-main-pop').off('click', '.g-toc-move-btn').on('click', '.g-toc-move-btn', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const $btn = $(this);
-            const ti = parseInt($btn.data('ti'));
-            const ri = currentBookPage;
-            let direction = $btn.hasClass('up') ? -1 : 1;
-
-            // 适配倒序：如果开启了倒序，视觉上的"上下"与底层数组的"前后"是相反的
-            if (C.reverseToc) {
-                direction = -direction;
-            }
-
-            const sh = m.get(ti);
-            if (!sh) return;
-
-            const success = sh.move(ri, direction);
-            if (!success) {
-                if (typeof toastr !== 'undefined') {
-                    toastr.warning('无法移动：已在边界', '提示', { timeOut: 1000 });
-                }
-                return;
-            }
-
-            // 同步修正当前正在阅读的页码，防止视觉跳脱
-            currentBookPage = ri + direction;
-
-            // 同步修正该页的隐藏(变绿)状态
-            if (summarizedRows[ti]) {
-                const hasCurrent = summarizedRows[ti].includes(ri);
-                const hasTarget = summarizedRows[ti].includes(ri + direction);
-
-                if (hasCurrent !== hasTarget) {
-                    if (hasCurrent) {
-                        summarizedRows[ti] = summarizedRows[ti].filter(x => x !== ri);
-                        summarizedRows[ti].push(ri + direction);
-                    }
-                    if (hasTarget) {
-                        summarizedRows[ti] = summarizedRows[ti].filter(x => x !== ri + direction);
-                        summarizedRows[ti].push(ri);
-                    }
-                    if (typeof saveSummarizedRows === 'function') saveSummarizedRows();
-                }
-            }
-
-            lastManualEditTime = Date.now();
-            m.save(true, true);
-
-            refreshBookView(ti);
-
-            // 视图刷新后，HTML被替换，我们需要在稍作延迟后重新为目录元素添加 active 类以保持目录打开
-            setTimeout(() => {
-                $('#gai-book-toc-' + ti).addClass('active');
-                $('#gai-toc-overlay-' + ti).addClass('active');
-            }, 50);
-        });
-
-        // 辅助函数：刷新笔记本视图
-        function refreshBookView(tableIndex) {
-            const sheet = m.get(tableIndex);
-            if (!sheet) return;
-
-            const newHtml = renderBookUI(sheet, tableIndex);
-            const $container = $(`.g-tbc[data-i="${tableIndex}"]`);
-            $container.replaceWith(newHtml);
-
-            // 重新显示（如果当前选中的是这个表格）
-            const activeIndex = parseInt($('.g-t.act').data('i'));
-            if (activeIndex === tableIndex) {
-                $(`.g-tbc[data-i="${tableIndex}"]`).css('display', 'flex');
-            }
-        }
 
         // 全选/单选逻辑
         $('#gai-main-pop').off('click', '.g-select-all').on('click', '.g-select-all', async function (e) {
@@ -5682,88 +4742,6 @@
             const sh = m.get(ti);
             if (!sh) return;
 
-            // ✅ 拦截：总结表使用笔记本视图专属删除逻辑
-            if (false) { // v4：不再存在“最后一张表是总结表”的特殊分支
-                try {
-                    isDeletingRow = true;  // 锁定
-
-                    // 获取当前页码
-                    const pageToDelete = currentBookPage;
-                    const totalPages = sh.r.length;
-
-                    // 边界检查
-                    if (totalPages === 0) {
-                        await customAlert('⚠️ 总结表为空，无需删除', '提示');
-                        return;
-                    }
-
-                    if (pageToDelete < 0 || pageToDelete >= totalPages) {
-                        await customAlert('⚠️ 当前页码无效', '错误');
-                        return;
-                    }
-
-                    // ✅ [新增] 弹出选择框：删除当前页 还是 删除全部
-                    const deleteOption = await showDeleteOptionsDialog(pageToDelete + 1, totalPages);
-
-                    if (deleteOption === null) {
-                        return; // 用户取消
-                    }
-
-                    if (deleteOption === 'current') {
-                        // 删除当前页
-                        sh.del(pageToDelete);
-
-                        // ✅ 关键：同步更新 summarizedRows（动态索引）
-                        if (summarizedRows[ti]) {
-                            summarizedRows[ti] = summarizedRows[ti]
-                                .filter(ri => ri !== pageToDelete)  // 移除被删除的索引
-                                .map(ri => ri > pageToDelete ? ri - 1 : ri);  // 大于删除索引的都 -1（行号前移）
-                            saveSummarizedRows();
-                        }
-
-                        // ✅ 边界处理：删除后，如果当前页超过了新的总页数，将其减 1
-                        if (currentBookPage >= sh.r.length && currentBookPage > 0) {
-                            currentBookPage--;
-                        }
-
-                        if (typeof toastr !== 'undefined') {
-                            toastr.success(`第 ${pageToDelete + 1} 页已删除`, '删除成功', { timeOut: 1500, preventDuplicates: true });
-                        }
-
-                    } else if (deleteOption === 'all') {
-                        // 删除全部总结
-                        const originalCount = sh.r.length;
-
-                        // 清空总结表
-                        sh.r = [];
-
-                        // 清空已总结标记
-                        if (summarizedRows[ti]) {
-                            summarizedRows[ti] = [];
-                            saveSummarizedRows();
-                        }
-
-                        // 重置页码
-                        currentBookPage = 0;
-
-                        if (typeof toastr !== 'undefined') {
-                            toastr.success(`已删除全部 ${originalCount} 页总结`, '删除成功', { timeOut: 2000, preventDuplicates: true });
-                        }
-                    }
-
-                    // 保存并刷新视图
-                    lastManualEditTime = Date.now();
-                    m.save(true, true); // 用户删除操作立即保存
-                    updateCurrentSnapshot();
-                    refreshBookView(ti);
-                    updateTabCount(ti);
-
-                } finally {
-                    isDeletingRow = false;  // 解锁
-                }
-                return; // 提前返回，不执行后面的通用逻辑
-            }
-
             try {
                 isDeletingRow = true;  // 锁定
 
@@ -5862,46 +4840,6 @@
             const ti = parseInt($('.g-t.act').data('i'));
             const sh = m.get(ti);
             if (!sh) return;
-
-            // ✅ 拦截：总结表使用笔记本视图专属新增逻辑
-            if (false) { // v4：手工记忆使用普通表格新增逻辑
-                // 获取当前页码
-                const insertAfterPage = currentBookPage;
-
-                // 创建新行
-                const nr = {};
-                sh.c.forEach((_, i) => nr[i] = '');
-
-                // 在当前页之后插入
-                sh.ins(nr, insertAfterPage);
-
-                // ✅ 关键：同步更新 summarizedRows（动态索引）
-                // 所有大于 currentBookPage 的索引值加 1（因为插入新页后，后面的行号后移了）
-                if (summarizedRows[ti]) {
-                    summarizedRows[ti] = summarizedRows[ti].map(ri => {
-                        return ri > insertAfterPage ? ri + 1 : ri;
-                    });
-                    saveSummarizedRows();
-                }
-
-                // ✅ 跳转：将 currentBookPage 加 1，自动翻页到这个新页面
-                currentBookPage = insertAfterPage + 1;
-
-                // 保存并刷新视图
-                lastManualEditTime = Date.now();
-                m.save(true, true); // 笔记本视图删除立即保存
-                updateCurrentSnapshot();
-                refreshBookView(ti);
-                updateTabCount(ti);
-
-                if (typeof toastr !== 'undefined') {
-                    toastr.success(`已在第 ${insertAfterPage + 1} 页之后插入新页`, '新增成功', { timeOut: 1500, preventDuplicates: true });
-                } else {
-                    await customAlert(`✅ 已在第 ${insertAfterPage + 1} 页之后插入新页`, '完成');
-                }
-
-                return; // 提前返回，不执行后面的通用逻辑
-            }
 
             // 通用逻辑：其他表格
             const nr = {};
@@ -6494,354 +5432,6 @@
         });
         $('#gai-btn-config').off('click').on('click', () => navTo('配置', shcf));
 
-        // ✨✨✨ 修改：移除显隐操作的成功弹窗，只刷新表格 ✨✨✨
-        // ✨✨✨ 新增：显/隐按钮逻辑（含总结表专属弹窗） ✨✨✨
-        $('#gai-btn-toggle').off('click').on('click', async function () {
-            const ti = selectedTableIndex !== null ? selectedTableIndex : parseInt($('.g-t.act').data('i'));
-            const sh = m.get(ti);
-
-            // 0. 空表拦截
-            if (!sh || sh.r.length === 0) {
-                await customAlert('⚠️ 当前表格没有任何数据，无法执行显/隐操作。', '无数据');
-                return;
-            }
-
-            // ✅ 分支 A：总结表专属操作面板
-            if (false) { // v4：旧总结显隐面板停用
-                const id = 'sum-toggle-dialog-' + Date.now();
-                const $overlay = $('<div>', {
-                    id: id,
-                    css: {
-                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                        width: '100vw', height: '100vh',
-                        background: 'rgba(0,0,0,0.5)', zIndex: 10000020,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }
-                });
-
-                // 获取当前主题状态，定义动态颜色变量
-                const isDark = UI.darkMode;
-                const dialogBg = isDark ? '#1e1e1e' : '#fff';
-                const borderColor = isDark ? 'rgba(255,255,255,0.2)' : '#ddd';
-                const inputBg = isDark ? '#2a2a2a' : '#fff';
-                const btnBg = UI.c; // 按钮背景跟随表头颜色
-                const btnColor = UI.tc; // 按钮文字跟随全局字体颜色
-
-                const $box = $('<div>', {
-                    css: {
-                        background: dialogBg, color: UI.tc, borderRadius: '12px', padding: '20px',
-                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                        width: '320px', maxWidth: '90vw', // ✨ 手机端自适应宽度
-                        display: 'flex', flexDirection: 'column', gap: '10px'
-                    }
-                });
-
-                const currentPageNum = currentBookPage + 1; // 转为人类可读的页码
-                const totalPages = sh.r.length;
-                const isCurrentHidden = isSummarized(ti, currentBookPage);
-
-                $box.append(`<div style="font-weight:bold; font-size:15px; text-align:center; color:${UI.tc};">👁️ 总结显/隐控制</div>`);
-                $box.append(`<div style="font-size:12px; color:${UI.tc}; opacity:0.6; text-align:center; margin-bottom:5px;">当前：第 ${currentPageNum} / ${totalPages} 篇</div>`);
-
-                // 按钮样式对象：使用 UI.c 和 UI.tc 跟随表头颜色和全局字体色
-                const btnCss = {
-                    padding: '10px',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: btnColor,
-                    fontWeight: '600',
-                    textAlign: 'left',
-                    paddingLeft: '15px',
-                    background: btnBg
-                };
-
-                // 1. 切换当前页
-                const $btnCurrent = $('<button>', {
-                    html: isCurrentHidden ? '👁️ 显示当前页 (第' + currentPageNum + '篇)' : '🙈 隐藏当前页 (第' + currentPageNum + '篇)',
-                    css: btnCss
-                }).on('click', () => {
-                    toggleRow(ti, currentBookPage);
-                    finish(`第 ${currentPageNum} 篇状态已切换`);
-                });
-
-                // 2. 隐藏/显示所有
-                const $btnAll = $('<button>', {
-                    html: '📚 将所有页面设为【隐藏/已归档】',
-                    css: btnCss
-                }).on('click', () => {
-                    if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                    summarizedRows[ti] = Array.from({ length: totalPages }, (_, k) => k);
-                    finish('所有页面已设为隐藏');
-                });
-
-                const $btnShowAll = $('<button>', {
-                    html: '📖 将所有页面设为【显示/正常】',
-                    css: btnCss
-                }).on('click', () => {
-                    if (summarizedRows[ti]) summarizedRows[ti] = [];
-                    finish('所有页面已设为显示');
-                });
-
-                // 3. 指定范围输入区
-                const $rangeArea = $('<div>', { css: { display: 'flex', gap: '5px', marginTop: '5px', alignItems: 'center' } });
-                const $rangeInput = $('<input>', {
-                    type: 'text',
-                    placeholder: '例: 1-3, 5',
-                    css: {
-                        flex: '1 1 auto',
-                        minWidth: '0', // ✨ 关键：允许收缩到最小
-                        padding: '6px 8px', // ✨ 减小内边距
-                        border: '1px solid ' + borderColor,
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        boxSizing: 'border-box',
-                        background: inputBg,
-                        color: UI.tc
-                    }
-                });
-                const $rangeHideBtn = $('<button>', {
-                    text: '隐藏',
-                    css: {
-                        flex: '0 0 auto', padding: '6px 10px', background: btnBg, color: btnColor,
-                        border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap'
-                    }
-                }).on('click', () => {
-                    const val = $rangeInput.val().trim();
-                    if (!val) return;
-                    processRange(val, 'hide');
-                });
-
-                const $rangeShowBtn = $('<button>', {
-                    text: '显示',
-                    css: {
-                        flex: '0 0 auto', padding: '6px 10px', background: btnBg, color: btnColor,
-                        border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap'
-                    }
-                }).on('click', () => {
-                    const val = $rangeInput.val().trim();
-                    if (!val) return;
-                    processRange(val, 'show');
-                });
-
-                $rangeArea.empty().append($rangeInput, $rangeHideBtn, $rangeShowBtn);
-
-                const $cancelBtn = $('<button>', {
-                    text: '取消',
-                    css: {
-                        padding: '8px',
-                        background: 'transparent',
-                        border: '1px solid ' + borderColor,
-                        borderRadius: '6px',
-                        color: UI.tc,
-                        opacity: '0.7',
-                        marginTop: '5px',
-                        cursor: 'pointer'
-                    }
-                }).on('click', () => $overlay.remove());
-
-                // --- 辅助逻辑 ---
-                function toggleRow(ti, ri) {
-                    if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                    const idx = summarizedRows[ti].indexOf(ri);
-                    if (idx > -1) summarizedRows[ti].splice(idx, 1);
-                    else summarizedRows[ti].push(ri);
-                }
-
-                function processRange(str, action = 'hide') {
-                    if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                    const parts = str.split(/[,，]/);
-                    let count = 0;
-                    parts.forEach(p => {
-                        if (p.includes('-')) {
-                            const [s, e] = p.split('-').map(Number);
-                            if (!isNaN(s) && !isNaN(e)) {
-                                for (let i = s; i <= e; i++) {
-                                    if (i > 0 && i <= totalPages) {
-                                        const targetIdx = i - 1;
-                                        if (action === 'hide' && !summarizedRows[ti].includes(targetIdx)) {
-                                            summarizedRows[ti].push(targetIdx);
-                                            count++;
-                                        } else if (action === 'show' && summarizedRows[ti].includes(targetIdx)) {
-                                            summarizedRows[ti] = summarizedRows[ti].filter(idx => idx !== targetIdx);
-                                            count++;
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            const idx = parseInt(p);
-                            if (!isNaN(idx) && idx > 0 && idx <= totalPages) {
-                                const targetIdx = idx - 1;
-                                if (action === 'hide' && !summarizedRows[ti].includes(targetIdx)) {
-                                    summarizedRows[ti].push(targetIdx);
-                                    count++;
-                                } else if (action === 'show' && summarizedRows[ti].includes(targetIdx)) {
-                                    summarizedRows[ti] = summarizedRows[ti].filter(id => id !== targetIdx);
-                                    count++;
-                                }
-                            }
-                        }
-                    });
-                    const actionText = action === 'hide' ? '隐藏' : '显示';
-                    finish(`已将指定范围内的 ${count} 篇设为${actionText}`);
-                }
-
-                function finish(msg) {
-                    saveSummarizedRows();
-                    m.save(true, true); // 总结标记操作立即保存
-                    if (typeof window.LeaseVectorMemory.updateCurrentSnapshot === 'function') {
-                        window.LeaseVectorMemory.updateCurrentSnapshot();
-                    }
-                    // 刷新总结视图
-                    const renderBookUI = window.LeaseVectorMemory.renderBookUI || (function () { }); // 防止未引用
-                    // 重新渲染当前页
-                    if ($('.g-t.act').data('i') === ti) {
-                        refreshTable(ti); // 使用 refreshTable 刷新
-                    }
-                    $overlay.remove();
-                    if (typeof toastr !== 'undefined') toastr.success(msg);
-                }
-
-                $box.append($btnCurrent, $btnAll, $btnShowAll, $rangeArea, $cancelBtn);
-                $overlay.append($box);
-                $('body').append($overlay);
-                return;
-            }
-
-            // ✅ 分支 B: 普通表格（所有非总结表）的原有逻辑
-            if (selectedRows.length > 0) {
-                if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                selectedRows.forEach(ri => {
-                    const idx = summarizedRows[ti].indexOf(ri);
-                    if (idx > -1) summarizedRows[ti].splice(idx, 1);
-                    else summarizedRows[ti].push(ri);
-                });
-                saveSummarizedRows();
-                m.save(true, true); // 总结标记切换立即保存
-                if (typeof window.LeaseVectorMemory.updateCurrentSnapshot === 'function') {
-                    window.LeaseVectorMemory.updateCurrentSnapshot();
-                }
-                refreshTable(ti);
-                // await customAlert(...) // 原有弹窗可移除
-            } else if (selectedRow !== null) {
-                if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                const idx = summarizedRows[ti].indexOf(selectedRow);
-                if (idx > -1) summarizedRows[ti].splice(idx, 1);
-                else summarizedRows[ti].push(selectedRow);
-                saveSummarizedRows();
-                m.save(true, true); // 单行总结标记立即保存
-                if (typeof window.LeaseVectorMemory.updateCurrentSnapshot === 'function') {
-                    window.LeaseVectorMemory.updateCurrentSnapshot();
-                }
-                refreshTable(ti);
-            } else {
-                // ✅ 批量显隐操作面板（当没有选中任何行时）
-                const id = 'batch-toggle-dialog-' + Date.now();
-                const $overlay = $('<div>', {
-                    id: id,
-                    css: {
-                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                        width: '100vw', height: '100vh',
-                        background: 'rgba(0,0,0,0.5)', zIndex: 10000020,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }
-                });
-
-                // 获取当前主题状态，定义动态颜色变量
-                const isDark = UI.darkMode;
-                const dialogBg = isDark ? '#1e1e1e' : '#fff';
-                const borderColor = isDark ? 'rgba(255,255,255,0.2)' : '#ddd';
-                const btnColor = UI.tc; // 按钮文字跟随全局字体颜色
-
-                const $box = $('<div>', {
-                    css: {
-                        background: dialogBg, color: UI.tc, borderRadius: '12px', padding: '20px',
-                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                        width: '320px', maxWidth: '90vw',
-                        display: 'flex', flexDirection: 'column', gap: '12px'
-                    }
-                });
-
-                const totalRows = sh.r.length;
-
-                $box.append(`<div style="font-weight:bold; font-size:15px; text-align:center; color:${UI.tc};">👻 批量显隐操作</div>`);
-                $box.append(`<div style="font-size:12px; color:${UI.tc}; opacity:0.6; text-align:center; margin-bottom:5px;">当前表格共 ${totalRows} 行</div>`);
-
-                // 按钮样式对象
-                const btnCss = {
-                    padding: '12px',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    textAlign: 'center'
-                };
-
-                // 1. 全部显示按钮（白色/浅色背景）
-                const $btnShowAll = $('<button>', {
-                    html: '👻 全部显示 (白色)',
-                    css: {
-                        ...btnCss,
-                        background: isDark ? '#3a3a3a' : '#f5f5f5',
-                        color: UI.tc
-                    }
-                }).on('click', () => {
-                    // 清空隐藏列表
-                    if (summarizedRows[ti]) {
-                        summarizedRows[ti] = [];
-                    }
-                    finish('所有行已设为显示');
-                });
-
-                // 2. 全部隐藏按钮（绿色背景）
-                const $btnHideAll = $('<button>', {
-                    html: '👻 全部隐藏 (绿色)',
-                    css: {
-                        ...btnCss,
-                        background: '#4caf50',
-                        color: '#fff'
-                    }
-                }).on('click', () => {
-                    // 将所有行索引加入隐藏列表
-                    if (!summarizedRows[ti]) summarizedRows[ti] = [];
-                    summarizedRows[ti] = Array.from({ length: totalRows }, (_, k) => k);
-                    finish('所有行已设为隐藏');
-                });
-
-                // 3. 取消按钮
-                const $cancelBtn = $('<button>', {
-                    text: '取消',
-                    css: {
-                        padding: '10px',
-                        background: 'transparent',
-                        border: '1px solid ' + borderColor,
-                        borderRadius: '6px',
-                        color: UI.tc,
-                        opacity: '0.7',
-                        cursor: 'pointer'
-                    }
-                }).on('click', () => $overlay.remove());
-
-                // 完成函数
-                function finish(msg) {
-                    saveSummarizedRows();
-                    m.save(true, true); // 批量总结标记立即保存
-                    if (typeof window.LeaseVectorMemory.updateCurrentSnapshot === 'function') {
-                        window.LeaseVectorMemory.updateCurrentSnapshot();
-                    }
-                    refreshTable(ti);
-                    $overlay.remove();
-                    if (typeof toastr !== 'undefined') toastr.success(msg);
-                }
-
-                $box.append($btnShowAll, $btnHideAll, $cancelBtn);
-                $overlay.append($box);
-                $('body').append($overlay);
-            }
-        });
     }
 
     function refreshTable(ti) {
@@ -6868,42 +5458,6 @@
         const sh = m.get(ti);
         const displayName = ti === 1 ? '支线剧情' : sh.n;
         $(`.g-t[data-i="${ti}"]`).text(`${displayName} (${sh.r.length})`);
-    }
-
-    // ========================================================================
-    // ========== AI总结功能模块 ==========
-    // ========================================================================
-
-    /**
-     * 分批总结执行函数
-     * 将大范围的总结任务切分成多个小批次顺序执行
-     * @param {number} start - 起始楼层
-     * @param {number} end - 结束楼层
-     * @param {number} step - 每批的层数
-     * @param {string} mode - 总结模式 'chat' 或 'table'
-     * @param {boolean} silent - 是否静默执行（不弹窗确认每批）
-     */
-    /**
-     * ✅✅✅ callAIForSummary 已完全迁移到 summary_manager.js
-     *
-     * 注意：此函数已不存在于 index.js，所有调用都应通过
-     * window.LeaseVectorMemory.SummaryManager.callAIForSummary() 进行
-     */
-
-    // ✅✅✅ 修正版：接收模式参数，精准控制弹窗逻辑 (修复黑色背景看不清问题)
-    // ✅✅✅ showSummaryPreview 函数已迁移到 summary_manager.js
-
-    function clearSummarizedData() {
-        Object.keys(summarizedRows).forEach(ti => {
-            const tableIndex = parseInt(ti);
-            const sh = m.get(tableIndex);
-            if (sh && summarizedRows[ti] && summarizedRows[ti].length > 0) {
-                sh.delMultiple(summarizedRows[ti]);
-            }
-        });
-
-        clearSummarizedMarks();
-        m.save();
     }
 
     /* ==========================================
@@ -8608,27 +7162,6 @@
 
         <div style="font-size:10px; color:#333; opacity:0.6; margin-top:4px;">拖动滑块实时调整表格文字大小</div>
 
-        <div style="margin-top: 15px; border-top: 1px dashed rgba(0,0,0,0.1); padding-top: 10px;">
-            <label style="font-weight: 600; display:block; margin-bottom:5px;">📖 总结本背景图 (DIY)</label>
-
-            <!-- 预览区域 -->
-            <div id="lvm_bg_preview" style="width: 100%; height: 60px; background: #eee; border-radius: 6px; margin-bottom: 8px; background-size: cover; background-position: center; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; color: #999; font-size: 10px;">
-                ${UI.bookBg ? '' : '暂无背景，使用默认纸张'}
-            </div>
-
-            <div style="display: flex; gap: 5px;">
-                <input type="text" id="lvm_bg_url" placeholder="输入图片 URL..." style="flex: 1; padding: 5px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                <button id="lvm_btn_clear_bg" style="padding: 5px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">🗑️</button>
-            </div>
-
-            <div style="margin-top: 5px; display: flex; align-items: center; gap: 8px;">
-                 <label for="lvm_bg_file" style="cursor: pointer; background: #17a2b8; color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; display: inline-block;">📂 选择本地图片</label>
-                 <input type="file" id="lvm_bg_file" accept="image/*" style="display: none;">
-                 <span style="font-size: 10px; color: #666;">(建议 < 1MB)</span>
-            </div>
-        </div>
-        <br>
-
         <div style="background:rgba(255,255,255,0.6); padding:10px; border-radius:4px; font-size:10px; margin-bottom:12px; color:#333333; border:1px solid rgba(0,0,0,0.1);">
             <strong>💡 提示：</strong><br>
             • 如果主题色较浅，请将字体颜色设为深色（如黑色）<br>
@@ -8707,60 +7240,12 @@
                 document.body.style.setProperty('--g-fs', val + 'px');
             });
 
-            // ========================================
-            // 📖 背景图设置事件绑定
-            // ========================================
-
-            // 初始化预览
-            if (UI.bookBg) {
-                $('#lvm_bg_preview').css('background-image', `url("${UI.bookBg}")`).text('');
-            }
-
-            // 1. 本地文件上传 (转 Base64)
-            $('#lvm_bg_file').on('change', function (e) {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                if (file.size > 2 * 1024 * 1024) { // 2MB 限制
-                    alert('图片太大了！建议使用小于 2MB 的图片，否则可能导致卡顿。');
-                    return;
-                }
-
-                const reader = new FileReader();
-                reader.onload = function (evt) {
-                    const base64 = evt.target.result;
-                    $('#lvm_bg_preview').css('background-image', `url("${base64}")`).text('');
-                    UI.bookBg = base64; // 暂存到内存对象
-                };
-                reader.readAsDataURL(file);
-            });
-
-            // 2. URL 输入
-            $('#lvm_bg_url').on('input', function () {
-                const url = $(this).val();
-                if (url) {
-                    $('#lvm_bg_preview').css('background-image', `url("${url}")`).text('');
-                    UI.bookBg = url;
-                }
-            });
-
-            // 3. 清除按钮
-            $('#lvm_btn_clear_bg').on('click', function () {
-                UI.bookBg = '';
-                $('#lvm_bg_preview').css('background-image', '').text('已清除，使用默认');
-                $('#lvm_bg_url').val('');
-                $('#lvm_bg_file').val('');
-            });
-
-            // ========================================
-            // 保存按钮（同时保存所有主题设置包括背景图）
-            // ========================================
+            // 保存按钮
             $('#lvm_save_theme').off('click').on('click', async function () {
                 UI.c = $('#lvm_theme_color').val();
                 UI.tc = $('#lvm_theme_text_color').val();
                 UI.fs = parseInt($('#lvm_theme_fontsize').val());
                 UI.darkMode = $('#lvm_ui_dark_mode').is(':checked'); // ✅ 保存夜间模式状态
-                // ✅ bookBg 已经在上面的事件中赋值到 UI.bookBg 了
 
                 try { localStorage.setItem(UK, JSON.stringify(UI)); } catch (e) { }
                 try { localStorage.setItem('lvm_timestamp', Date.now().toString()); } catch (e) { }
@@ -8778,7 +7263,7 @@
                 const isCurrentNight = $('#lvm_ui_dark_mode').is(':checked');
                 const modeName = isCurrentNight ? '夜间' : '白天';
 
-                if (!await customConfirm(`确定重置【${modeName}模式】的颜色配置？\n\n(字体大小和背景图也将重置)`, '恢复默认')) return;
+                if (!await customConfirm(`确定重置【${modeName}模式】的颜色配置？\n\n字体大小也将重置。`, '恢复默认')) return;
 
                 // 1. 恢复当前模式的默认值
                 if (isCurrentNight) {
@@ -8799,7 +7284,6 @@
 
                 // 2. 重置公共属性
                 UI.fs = 12;
-                UI.bookBg = '';
 
                 // 3. 保存与同步
                 if (typeof API_CONFIG !== 'undefined') {
@@ -8819,9 +7303,6 @@
                 $('#lvm_theme_fontsize').val(12);
                 $('#lvm_fs_val').text('12px');
 
-                $('#lvm_bg_preview').css('background-image', '').text('暂无背景，使用默认纸张');
-                $('#lvm_bg_url').val('');
-                $('#lvm_bg_file').val('');
 
                 // 5. 提示
                 if (typeof toastr !== 'undefined') {
@@ -8835,7 +7316,6 @@
 
     async function shapi() {
         await loadConfig(); // ✅ 强制刷新配置，确保读取到最新的 Provider 设置
-        API_CONFIG.summarySource = 'table';
         if (!Array.isArray(API_CONFIG.profiles)) API_CONFIG.profiles = [];
         if (typeof API_CONFIG.activeProfileId !== 'string') API_CONFIG.activeProfileId = '';
 
@@ -9835,18 +8315,14 @@
             if (serverData.config) Object.assign(C, serverData.config);
             sanitizeLeanConfig(serverData.config || null);
 
-            // 保护 API 进度指针
+            // 保护批量填表进度指针。
             if (serverData.api) {
-                const currentSumIdx = API_CONFIG.lastSummaryIndex;
                 const currentBfIdx = API_CONFIG.lastBackfillIndex;
 
                 Object.assign(API_CONFIG, serverData.api);
                 sanitizeApiConfig();
 
                 // 恢复运行时指针（防止云端旧指针覆盖本地新进度）
-                if (currentSumIdx !== undefined && currentSumIdx > (serverData.api.lastSummaryIndex || 0)) {
-                    API_CONFIG.lastSummaryIndex = currentSumIdx;
-                }
                 if (currentBfIdx !== undefined && currentBfIdx > (serverData.api.lastBackfillIndex || 0)) {
                     API_CONFIG.lastBackfillIndex = currentBfIdx;
                 }
@@ -9937,7 +8413,6 @@
         try {
             // 3. 准备要保存的数据
             const cleanedApiConfig = JSON.parse(JSON.stringify(API_CONFIG));
-            delete cleanedApiConfig.lastSummaryIndex;
             delete cleanedApiConfig.lastBackfillIndex;
             const currentLibrary = {}; // 向量库已独立存储，此处设空
 
@@ -10042,127 +8517,6 @@
         }
     }
 
-    // 【全局单例】配置页表格选择按钮监听器（防止重复绑定）
-    (function () {
-        if (window._lvm_config_table_selector_bound) return;
-        window._lvm_config_table_selector_bound = true;
-
-        let isOpening = false; // 防抖标志
-        let lastClickTime = 0; // 记录上次点击时间
-
-        // 暴露到全局，供内联事件调用
-        window._lvm_openTableSelector = function (event) {
-            // ✅ 修复1: 阻止事件冒泡和默认行为
-            if (event) {
-                event.preventDefault();
-                event.stopPropagation();
-            }
-
-            // ✅ 修复2: 时间防抖(300ms内的重复点击直接忽略)
-            const now = Date.now();
-            if (now - lastClickTime < 300) {
-                console.log('⚠️ [配置页-表格选择] 时间防抖拦截: 300ms内重复点击');
-                return;
-            }
-            lastClickTime = now;
-
-            // 防抖：如果正在打开，直接返回
-            if (isOpening) {
-                console.log('⚠️ [配置页-表格选择] 防抖拦截：弹窗正在打开中');
-                return;
-            }
-            isOpening = true;
-
-            try {
-                const m = window.LeaseVectorMemory.m;
-                const C = window.LeaseVectorMemory.config_obj;
-
-                console.log('✅ [配置页-表格选择] 按钮被点击');
-
-                const dataTables = m.s.slice(0, -1);
-                const UI = window.LeaseVectorMemory.ui;
-
-                // 🔥 关键修复：强制挂载到 body，避免被父容器的 transform/filter 影响
-                const overlay = $('<div>').attr('id', 'gg-table-selector-overlay');
-
-                // ✅ 使用原生 DOM API 直接挂载到 body（不走 jQuery），确保最高层级
-                document.body.appendChild(overlay[0]);
-
-                // 🔥 使用 setAttribute 添加内联样式，!important 强制覆盖所有样式
-                overlay[0].setAttribute('style', `
-                    position: fixed !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    right: 0 !important;
-                    bottom: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    background: rgba(0,0,0,0.5) !important;
-                    z-index: 2147483647 !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                    overflow-y: auto !important;
-                    padding: 10px !important;
-                    margin: 0 !important;
-                    border: none !important;
-                    transform: none !important;
-                `.replace(/\s+/g, ' ').trim());
-
-                const modal = $('<div>').addClass('gg-custom-modal');
-                let checkboxesHtml = '';
-                const savedSelection = C.autoSummaryTargetTables;
-                dataTables.forEach((sheet, i) => {
-                    const rowCount = sheet.r ? sheet.r.length : 0;
-                    const tableName = sheet.n || `表${i}`;
-                    const isChecked = (savedSelection === null || savedSelection === undefined) ? true : savedSelection.includes(i);
-                    checkboxesHtml += `<div class="gg-choice-card" title="${tableName}"><input type="checkbox" class="gg-auto-sum-table-select-modal" value="${i}" ${isChecked ? 'checked' : ''}><span class="gg-choice-name">${tableName}</span><span class="gg-choice-badge" style="opacity: 0.7;">${rowCount}行</span></div>`;
-                });
-                // ✅ 修复：使用50vh代替固定400px，适配小屏幕
-                const modalContent = `<span id="lvm_modal_close_btn" style="position: absolute; right: 20px; top: 20px; cursor: pointer; font-size: 24px; line-height: 1; opacity: 0.7;">&times;</span><h3 style="margin: 0 0 15px 0;">🎯 选择表格</h3><div style="margin-bottom: 15px;"><div style="display: flex; gap: 8px; margin-bottom: 10px;"><button type="button" id="lvm_modal_select_all" style="flex: 1; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">全选</button><button type="button" id="lvm_modal_deselect_all" style="flex: 1; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">全不选</button></div><div class="gg-choice-grid" style="max-height: min(400px, 50vh); overflow-y: auto;">${checkboxesHtml}</div></div><div style="display: flex; gap: 10px;"><button type="button" id="lvm_modal_cancel" style="flex: 1; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">取消</button><button type="button" id="lvm_modal_save" style="flex: 1; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">确定保存</button></div>`;
-                modal.html(modalContent);
-                overlay.append(modal);
-                setTimeout(() => {
-                    $('#lvm_modal_close_btn').on('click', function () { overlay.remove(); $(document).off('keydown.lvm_modal'); $(document).off('click.lvm_card'); isOpening = false; });
-                    $('#lvm_modal_select_all').on('click', function () { $('.gg-auto-sum-table-select-modal').prop('checked', true); });
-                    $('#lvm_modal_deselect_all').on('click', function () { $('.gg-auto-sum-table-select-modal').prop('checked', false); });
-                    $('#lvm_modal_cancel').on('click', function () { overlay.remove(); $(document).off('keydown.lvm_modal'); $(document).off('click.lvm_card'); isOpening = false; });
-                    overlay.on('click', function (e) { if (e.target === overlay[0]) { overlay.remove(); $(document).off('keydown.lvm_modal'); $(document).off('click.lvm_card'); isOpening = false; } });
-                    $(document).on('keydown.lvm_modal', function (e) { if (e.key === 'Escape') { overlay.remove(); $(document).off('keydown.lvm_modal'); $(document).off('click.lvm_card'); isOpening = false; } });
-                    $(document).off('click.lvm_card').on('click.lvm_card', '.gg-choice-card', function (e) {
-                        // ✅ Fix: If the input itself is clicked, let the browser handle it natively
-                        if ($(e.target).is('input')) return;
-
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const $cb = $(this).find('input');
-                        $cb.prop('checked', !$cb.prop('checked'));
-                    });
-                    $('#lvm_modal_save').on('click', function () {
-                        const selected = [];
-                        $('.gg-auto-sum-table-select-modal:checked').each(function () { selected.push(parseInt($(this).val())); });
-                        C.autoSummaryTargetTables = selected;
-                        localStorage.setItem('lvm_config', JSON.stringify(C));
-                        console.log(`💾 [自动总结-表格选择] 已保存选择: ${selected.length === 0 ? '全不选' : selected.join(', ')}`);
-                        window.LeaseVectorMemory.m.save(false, true); // 配置更改立即保存
-                        let buttonText = selected.length === 0 ? '⚠️ 未选择表格 (点击修改)' : `🎯 已选择 ${selected.length} 个表格 (点击修改)`;
-                        $('#lvm_table_selector_text').text(buttonText);
-                        if (typeof saveAllSettingsToCloud === 'function') { saveAllSettingsToCloud().catch(err => console.warn('⚠️ [表格选择] 云端同步失败:', err)); }
-                        if (typeof toastr !== 'undefined') { toastr.success(selected.length === 0 ? '未选择表格' : `已选择 ${selected.length} 个表格`, '保存成功', { timeOut: 2000 }); }
-                        overlay.remove();
-                        $(document).off('keydown.lvm_modal');
-                        $(document).off('click.lvm_card');
-                        isOpening = false;
-                    });
-                }, 100);
-            } catch (error) {
-                alert("执行报错: " + error.message);
-                console.error("❌ [表格选择按钮] 错误详情:", error);
-                isOpening = false; // 出错时也要重置
-            }
-        };
-    })();
-
     async function shcf() {
         //  🛡️ 设置恢复标志，防止在配置面板打开过程中触发保存
         isRestoringSettings = true;
@@ -10173,17 +8527,12 @@
         const ctx = m.ctx();
         const totalCount = ctx && ctx.chat ? ctx.chat.length : 0;
 
-        // ✅ 智能修正逻辑：如果指针超出范围，修正到当前最大值（而不是归零）
-        if (totalCount > 0 && API_CONFIG.lastSummaryIndex > totalCount) {
-            console.log(`⚠️ [进度修正] 总结指针超出范围，已修正为 ${totalCount}（原值: ${API_CONFIG.lastSummaryIndex}）`);
-            API_CONFIG.lastSummaryIndex = totalCount;
-        }
+        // 如果填表指针超出范围，修正到当前最大值（而不是归零）。
         if (totalCount > 0 && API_CONFIG.lastBackfillIndex > totalCount) {
             console.log(`⚠️ [进度修正] 填表指针超出范围，已修正为 ${totalCount}（原值: ${API_CONFIG.lastBackfillIndex}）`);
             API_CONFIG.lastBackfillIndex = totalCount;
         }
-        // ✅ 如果指针未定义，初始化为 0
-        if (API_CONFIG.lastSummaryIndex === undefined) API_CONFIG.lastSummaryIndex = 0;
+        // 如果指针未定义，初始化为 0。
         if (API_CONFIG.lastBackfillIndex === undefined) API_CONFIG.lastBackfillIndex = 0;
 
         // ✅ 休眠警告横幅
@@ -10402,9 +8751,6 @@
         window.isEditingConfig = true; // 标记开始编辑配置，防止后台同步覆盖用户输入
 
         setTimeout(() => {
-            // 轻量版仅支持记忆表格总结。
-            API_CONFIG.summarySource = 'table';
-
             // ==================== 世界书/向量化分区折叠状态 ====================
             const persistPanelFoldState = () => {
                 try {
@@ -10429,22 +8775,13 @@
             };
 
             const $vectorCard = $('.gg-vector-card');
-            const $summaryRuleCard = $('.gg-summary-rule-card');
             const $toggleVector = $('#lvm_toggle_vector_panel');
-            const $toggleSummaryRule = $('#lvm_toggle_summary_rule_panel');
 
             setPanelCollapsed($vectorCard, $toggleVector, !!C.vectorPanelCollapsed, 'vectorPanelCollapsed');
-            setPanelCollapsed($summaryRuleCard, $toggleSummaryRule, !!C.summaryRulePanelCollapsed, 'summaryRulePanelCollapsed');
 
             $toggleVector.off('click').on('click', function () {
                 const nextCollapsed = !$vectorCard.hasClass('gg-card-collapsed');
                 setPanelCollapsed($vectorCard, $toggleVector, nextCollapsed, 'vectorPanelCollapsed');
-                persistPanelFoldState();
-            });
-
-            $toggleSummaryRule.off('click').on('click', function () {
-                const nextCollapsed = !$summaryRuleCard.hasClass('gg-card-collapsed');
-                setPanelCollapsed($summaryRuleCard, $toggleSummaryRule, nextCollapsed, 'summaryRulePanelCollapsed');
                 persistPanelFoldState();
             });
 
@@ -10460,24 +8797,6 @@
                 m.save(false, true);
                 console.log('💾 [每聊配置] 已保存自动批量填表设置:', isChecked);
             });
-
-            // ✨✨✨ 自动总结开关的 UI 联动 ✨✨✨
-            $('#lvm_c_auto_sum').on('change', function () {
-                syncUIToConfig();  // ✅✅✅ 确保同步到全局配置对象 C 和 localStorage
-                const isChecked = $(this).is(':checked');
-
-                if (isChecked) {
-                    $('#lvm_auto_sum_settings').slideDown();
-                } else {
-                    $('#lvm_auto_sum_settings').slideUp();
-                }
-
-                // ✅ Per-Chat Configuration: Update C and save to current chat immediately
-                C.autoSummary = isChecked;
-                m.save(false, true); // 配置更改立即保存
-                console.log('💾 [每聊配置] 已保存自动总结设置到当前聊天:', isChecked);
-            });
-
 
             $('#lvm_open_probe').on('click', function () {
                 if (window.LeaseVectorMemory && window.LeaseVectorMemory.DebugManager) {
@@ -10555,7 +8874,6 @@
 
                         $('#lvm_c_auto_bf').prop('checked', C.autoBackfill);
                         $('#lvm_auto_bf_settings').toggle(!!C.autoBackfill);
-                        $('#lvm_c_auto_sum').prop('checked', C.autoSummary);
                     }
 
                     // 第二步：同步记忆表格与进度 (Chat Metadata)
@@ -10626,15 +8944,6 @@
                 C.tableInj = $('#lvm_c_table_inj').is(':checked');
                 C.contextLimit = $('#lvm_c_limit_on').is(':checked');
                 C.contextLimitCount = Math.max(1, parseInt($('#lvm_c_limit_count').val()) || 30);
-                C.autoSummary = $('#lvm_c_auto_sum').is(':checked');
-                C.autoSummaryFloor = parseInt($('#lvm_c_auto_floor').val());
-                C.autoSummaryPrompt = $('#lvm_c_auto_sum_prompt').is(':checked');
-                C.autoSummarySilent = $('#lvm_c_auto_sum_silent').is(':checked');
-                C.autoSummaryDelay = $('#lvm_c_auto_sum_delay').is(':checked');
-                C.autoSummaryDelayCount = parseInt($('#lvm_c_auto_sum_delay_count').val()) || 5;
-                C.summaryRowAction = ['keep', 'hide', 'delete'].includes($('#lvm_c_summary_row_action').val())
-                    ? $('#lvm_c_summary_row_action').val()
-                    : 'hide';
                 C.filterTags = $('#lvm_c_filter_tags').val();
                 C.filterTagsWhite = $('#lvm_c_filter_tags_white').val();
                 if (!Array.isArray(C.filterTagPresets)) C.filterTagPresets = [];
@@ -10652,13 +8961,6 @@
                     C.filterTagActivePresetId = '';
                 }
                 C.vectorEnabled = $('#lvm_c_vector_enabled').is(':checked');
-                C.autoVectorizeSummary = $('#lvm_c_auto_vectorize').is(':checked');
-                API_CONFIG.summarySource = 'table';
-
-                // ✅ 修复：表格选择已移到弹窗模态框中，有自己的保存逻辑
-                // 此处不再读取复选框，避免因找不到元素而错误重置 C.autoSummaryTargetTables
-                // 弹窗模态框会直接更新 C.autoSummaryTargetTables 并调用 m.save()
-
                 // 保存到 localStorage
                 try {
                     localStorage.setItem(CK, JSON.stringify(C));
@@ -10668,18 +8970,6 @@
                     console.error('❌ [syncUIToConfig] localStorage 写入失败:', e);
                 }
             }
-
-            const refreshVectorTakeoverBadge = () => {
-                const status = getVectorSummaryTakeoverStatus();
-                const $badge = $('#lvm_vector_takeover_status');
-                if (!$badge.length) return;
-                $badge.css({
-                    borderColor: `${status.tone}55`,
-                    background: `${status.tone}14`,
-                    color: status.tone
-                });
-                $badge.html(`<strong>${status.ready ? '✅' : '⏳'} ${esc(status.label)}</strong><br>${esc(status.detail)}`);
-            };
 
             $('#lvm_c_limit_on').off('change').on('change', function () {
                 C.contextLimit = $(this).is(':checked');
@@ -10787,7 +9077,6 @@
                     localStorage.setItem('lvm_config', JSON.stringify(C));
                 } catch (e) { }
                 m.save(false, true);
-                refreshVectorTakeoverBadge();
 
                 // 3. 实时反馈
                 console.log(`💠 [设置] 独立向量检索已${C.vectorEnabled ? '开启' : '关闭'}`);
@@ -10796,13 +9085,6 @@
                 if (typeof saveAllSettingsToCloud === 'function') {
                     saveAllSettingsToCloud().catch(() => { });
                 }
-            });
-
-            $('#lvm_c_auto_vectorize').on('change', function () {
-                C.autoVectorizeSummary = $(this).is(':checked');
-                syncUIToConfig();
-                m.save(false, true);
-                refreshVectorTakeoverBadge();
             });
 
             // ==================== 标签过滤预设：保存/切换/删除 ====================
@@ -11282,7 +9564,6 @@
         summarizedRows = {};
         userColWidths = {};
         userRowHeights = {};
-        API_CONFIG.lastSummaryIndex = 0;
         API_CONFIG.lastBackfillIndex = 0;
         lastInternalSaveTime = 0;
         console.log('✅ [防串味] 内存状态已完全清空');
@@ -12119,6 +10400,7 @@
             const sv = localStorage.getItem(UK);
             if (sv) {
                 UI = { ...UI, ...JSON.parse(sv) };
+                delete UI.bookBg;
                 console.log('✅ [初始化] 已从 localStorage 加载 UI 配置');
             }
         } catch (e) {
@@ -12132,7 +10414,6 @@
         // prompt_manager.js 会在自己加载时自动调用 initProfiles() 进行数据迁移
 
         // loadColWidths(); // ❌ 已废弃：不再从全局加载，列宽/行高通过 m.load() 从会话存档加载
-        // loadSummarizedRows(); // ❌ 已废弃：不再从全局加载，改为通过 m.load() 从角色专属存档加载
 
         // Only attempt to load data if a chat is actually open
         const ctx = SillyTavern.getContext();
@@ -12783,7 +11064,6 @@
         navTo: navTo,   // ✅ 新增：暴露跳转函数
         goBack: goBack,  // ✅ 新增：暴露返回函数
         loadConfig: loadConfig,  // ✨ 供子模块使用
-        markAsSummarized: markAsSummarized,  // ✅ 总结模块需要
         updateCurrentSnapshot: updateCurrentSnapshot,  // ✅ 子模块需要
         refreshTable: refreshTable,  // ✅ 子模块需要
         updateTabCount: updateTabCount,  // ✅ 子模块需要
