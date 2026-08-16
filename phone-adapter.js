@@ -37,11 +37,11 @@
     function hookProbeUpdate() {
         const topWin = getTopWindow();
         const checkGaigai = setInterval(() => {
-            if (!topWin.Gaigai) return;
+            if (!topWin.LeaseVectorMemory) return;
             clearInterval(checkGaigai);
 
-            let lastRequestData = topWin.Gaigai.lastRequestData;
-            Object.defineProperty(topWin.Gaigai, 'lastRequestData', {
+            let lastRequestData = topWin.LeaseVectorMemory.lastRequestData;
+            Object.defineProperty(topWin.LeaseVectorMemory, 'lastRequestData', {
                 get() {
                     return lastRequestData;
                 },
@@ -58,7 +58,7 @@
                 enumerable: true
             });
 
-            topWin.Gaigai.markPhoneMessages = markPhoneMessages;
+            topWin.LeaseVectorMemory.markPhoneMessages = markPhoneMessages;
             console.log('✅ [手机适配] 探针钩子已安装 (v1.4.0)');
         }, 100);
 

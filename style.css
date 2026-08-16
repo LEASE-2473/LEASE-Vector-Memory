@@ -1119,7 +1119,7 @@
 }
 
 /* ✅ 专门针对顺延输入框的强制样式（双重保险） */
-#gg_postpone_floors {
+#lvm_postpone_floors {
     background: #ffffff !important;
     color: #333333 !important;
     border: 1px solid #ddd !important;
@@ -1130,7 +1130,7 @@
 .g-w.g-gl input[type="text"],
 .g-w.g-gl input[type="password"],
 .g-w.g-gl select,
-.g-w.g-gl #gg_postpone_floors {
+.g-w.g-gl #lvm_postpone_floors {
     background: #2a2a2a !important;
     color: #e0e0e0 !important;
     border-color: rgba(255, 255, 255, 0.2) !important;
@@ -1382,9 +1382,9 @@
     margin-top: 10px;
 }
 
-.gg-sync-vector-zone #gg_c_sync_wi,
-.gg-sync-vector-zone #gg_c_vector_enabled,
-.gg-sync-vector-zone #gg_c_auto_vectorize {
+.gg-sync-vector-zone #lvm_c_sync_wi,
+.gg-sync-vector-zone #lvm_c_vector_enabled,
+.gg-sync-vector-zone #lvm_c_auto_vectorize {
     width: 14px !important;
     height: 14px !important;
     min-width: 14px !important;
@@ -1394,14 +1394,14 @@
     margin-right: 6px !important;
 }
 
-.gg-sync-vector-zone #gg_c_sync_wi {
+.gg-sync-vector-zone #lvm_c_sync_wi {
     position: relative !important;
     top: 2px !important;
 }
 
-.gg-sync-vector-zone #gg_c_sync_wi::after,
-.gg-sync-vector-zone #gg_c_vector_enabled::after,
-.gg-sync-vector-zone #gg_c_auto_vectorize::after {
+.gg-sync-vector-zone #lvm_c_sync_wi::after,
+.gg-sync-vector-zone #lvm_c_vector_enabled::after,
+.gg-sync-vector-zone #lvm_c_auto_vectorize::after {
     left: 3px !important;
     top: 0 !important;
     width: 4px !important;
@@ -2077,8 +2077,8 @@ th.g-col-ops {
 
 /* ========== 📱 手机端表格选择按钮修复 (Nuclear Fix) ========== */
 /* 强制显示手指光标 + 移除300ms延迟 + 确保层级 + 强制可点击 */
-#gg_open_table_selector,
-#gg_sum_open_table_selector {
+#lvm_open_table_selector,
+#lvm_sum_open_table_selector {
     /* ✅ NUCLEAR FIX: Force these buttons to accept clicks on mobile */
     position: relative !important;
     /* Crucial for z-index to work */
@@ -2105,8 +2105,8 @@ th.g-col-ops {
 
 /* ✅ 修复后的子元素策略：让子元素不阻止事件，但不能设置 pointer-events: none */
 /* 因为 pointer-events: none 会导致移动端点击穿透 */
-#gg_open_table_selector *,
-#gg_sum_open_table_selector * {
+#lvm_open_table_selector *,
+#lvm_sum_open_table_selector * {
     /* 不设置 pointer-events，让事件正常冒泡到按钮 */
     user-select: none !important;
     /* 防止选中文字 */

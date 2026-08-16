@@ -6,9 +6,10 @@
 
 ## 仓库身份
 
-- **LEASE 自己的发布仓库（唯一允许写入的目标）**：`https://github.com/LEASE-2473/ST-Memory-Context`
+- **计划中的 LEASE 独立发布仓库（唯一允许写入的目标）**：`https://github.com/LEASE-2473/LEASE-Vector-Memory`
 - **原作者仓库（只读参考，禁止写入）**：`https://github.com/gaigai315/ST-Memory-Context`
-- 本地项目目录：`D:\LEASE AI Project\SillyTavern Project Main\插件\ST-Memory-Context-main`
+- 本地项目目录：`D:\LEASE AI Project\SillyTavern Project Main\插件\LEASE-Memory-Table`
+- 当前本地仓库没有 remote；实机验收完成前禁止创建远端或推送。
 
 ## 绝对禁止的操作
 
@@ -29,9 +30,9 @@
 
 ## 每次发布前必须核对
 
-1. 执行 `git remote -v`，确认 `origin` 指向 `LEASE-2473/ST-Memory-Context`。
+1. 执行 `git remote -v`，确认 `origin` 指向 `LEASE-2473/LEASE-Vector-Memory`。
 2. 确认当前 GitHub 登录账号和目标仓库均属于 `LEASE-2473`。
-3. 如果创建 PR，确认 base/目标仓库是 `LEASE-2473/ST-Memory-Context`，绝不能是 `gaigai315/ST-Memory-Context`。
+3. 如果创建 PR，确认 base/目标仓库是 `LEASE-2473/LEASE-Vector-Memory`，绝不能是 `gaigai315/ST-Memory-Context`。
 4. 在任何推送、合并、Release 或仓库迁移前，向 LEASE 清楚说明实际写入目标。
 5. 如果目标不明确或出现原作者仓库地址，立即停止，不得猜测。
 
@@ -39,11 +40,11 @@
 
 本项目是 LEASE 自行维护的非官方衍生版本。当前代码、功能取舍和后续维护由 LEASE 独立负责，不代表原作者立场，也不应要求原作者为本版本提供支持。
 
-当前 GitHub 仓库可能仍显示 Fork 来源关系；这只是 GitHub 的仓库关系标记，不代表修改会自动回传原作者。若未来要取消 Fork 关系并迁移为完全独立的普通仓库，必须由 LEASE 明确授权后另行操作，不能擅自删除、迁移或重建仓库。
+本项目必须发布为独立普通仓库，不连接旧 LEASE Fork，也不配置原作者仓库为可写 remote。
 
 ## 原作者与创意来源声明
 
-LEASE Memory Context 魔改自 **gaigai315 / Gaigai Team 及 ST-Memory-Context contributors** 的开源项目 **ST-Memory-Context**。本衍生版本的核心创意、原始设计基础及大量既有实现来源于原项目；LEASE 对这些创意与贡献表示感谢并持续保留署名。
+LEASE Vector Memory 魔改自 **gaigai315 / Gaigai Team 及 ST-Memory-Context contributors** 的开源项目 **ST-Memory-Context**。本衍生版本的核心创意、原始设计基础及大量既有实现来源于原项目；LEASE 对这些创意与贡献表示感谢并持续保留署名。
 
 - 原项目：`https://github.com/gaigai315/ST-Memory-Context`
 - 原项目声明的许可证：MIT License
