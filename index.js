@@ -1,5 +1,5 @@
 // ========================================================================
-// LEASE Vector Memory v4.3.1
+// LEASE Vector Memory v4.3.2
 // SillyTavern 行级冷热记忆、直接向量化与语义检索
 // ========================================================================
 (function () {
@@ -16,7 +16,7 @@
     }
     window.LeaseVectorMemoryLoaded = true;
 
-    console.log('🚀 LEASE Vector Memory v4.3.1 启动');
+    console.log('🚀 LEASE Vector Memory v4.3.2 启动');
 
     // ===== 防止配置被后台同步覆盖的标志 =====
     window.isEditingConfig = false;
@@ -25,7 +25,7 @@
     let isRestoringSettings = false;
 
     // ==================== 全局常量定义 ====================
-    const V = 'v4.3.1';
+    const V = 'v4.3.2';
     const SK = 'lvm_data';              // 数据存储键
     const UK = 'lvm_ui';                // UI配置存储键
     const AK = 'lvm_api';               // API配置存储键
@@ -3031,6 +3031,65 @@
         return null;
     }
 
+    function getHiddenMessageIndices(ctx) {
+        const hiddenIndices = new Set();
+        if (!Array.isArray(ctx?.chat)) return hiddenIndices;
+        ctx.chat.forEach((msg, index) => {
+            if (msg?.is_system === true) hiddenIndices.add(index);
+        });
+        return hiddenIndices;
+    }
+
+    async function silentHideMessages(ctx, messageIndices) {
+        if (!ctx || !Array.isArray(ctx.chat) || !Array.isArray(messageIndices) || messageIndices.length === 0) {
+            return { hidden: 0 };
+        }
+
+        let hidden = 0;
+        messageIndices.forEach(index => {
+            if (!ctx.chat[index]) return;
+            ctx.chat[index].is_system = true;
+            const $message = $(`#chat .mes[mesid="${index}"]`);
+            if ($message.length) $message.attr('is_system', 'true');
+            hidden++;
+        });
+
+        if (hidden > 0 && typeof ctx.saveChat === 'function') {
+            await ctx.saveChat();
+        }
+        return { hidden };
+    }
+
+    async function applyContextLimitHiding() {
+        if (!C?.masterSwitch || !C.contextLimit) return { hidden: 0, reason: 'disabled' };
+
+        const keepFloors = Math.max(1, Number.parseInt(C.contextLimitCount, 10) || 30);
+        const ctx = m?.ctx?.();
+        if (!Array.isArray(ctx?.chat) || ctx.chat.length === 0) {
+            return { hidden: 0, reason: 'no-chat' };
+        }
+
+        const dialogueIndices = [];
+        ctx.chat.forEach((msg, index) => {
+            if (!msg || msg.role === 'system' || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) return;
+            dialogueIndices.push(index);
+        });
+        if (dialogueIndices.length <= keepFloors) {
+            return { hidden: 0, reason: 'within-limit', total: dialogueIndices.length, keep: keepFloors };
+        }
+
+        const alreadyHidden = getHiddenMessageIndices(ctx);
+        const hideCount = dialogueIndices.length - keepFloors;
+        const shouldHide = dialogueIndices
+            .slice(0, hideCount)
+            .filter(index => !alreadyHidden.has(index));
+        const result = await silentHideMessages(ctx, shouldHide);
+        console.log(`✂️ [保留N层] 对话共 ${dialogueIndices.length} 层，保留最近 ${keepFloors} 层，本次新增隐藏 ${result.hidden} 层`);
+        return { ...result, total: dialogueIndices.length, keep: keepFloors };
+    }
+
+    window.LeaseVectorMemory.applyContextLimitHiding = applyContextLimitHiding;
+
     function injectMemoryContext(ev) {
         if (!C.masterSwitch || window.isSummarizing || !ev || !Array.isArray(ev.chat)) return;
 
@@ -3128,21 +3187,34 @@
     function getInjectionPosition(depth, chat) {
         if (!chat || chat.length === 0) return 0;
 
-        const numericDepth = Number.parseInt(depth, 10) || 0;
-        // 用户显式设置深度时，从请求末尾向前计算。
-        if (numericDepth > 0) {
-            return Math.max(0, chat.length - numericDepth);
-        }
-        // 默认锚点：预设/System/世界书之后，第一条历史 user/assistant 之前。
+        const getMessageText = msg => {
+            if (typeof msg?.content === 'string') return msg.content;
+            if (typeof msg?.mes === 'string') return msg.mes;
+            if (Array.isArray(msg?.parts)) {
+                return msg.parts.map(part => typeof part?.text === 'string' ? part.text : '').join('\n');
+            }
+            return '';
+        };
+
+        // 默认统一锚点：热记忆和冷召回都插在 [Start a new Chat] system 之前。
         for (let i = 0; i < chat.length; i++) {
             const msg = chat[i];
             if (!msg) continue;
 
-            if (msg.role === 'system' && msg.content && msg.content.includes('[Start a new Chat]')) {
-                return i + 1;
+            if (getMessageText(msg).includes('[Start a new Chat]')) {
+                return i;
             }
+        }
 
-            // 2. 兜底：插入到第一条用户/AI消息之前
+        const numericDepth = Number.parseInt(depth, 10) || 0;
+        if (numericDepth > 0) {
+            return Math.max(0, chat.length - numericDepth);
+        }
+
+        // 没有分隔符时，兜底插入到第一条用户/AI消息之前。
+        for (let i = 0; i < chat.length; i++) {
+            const msg = chat[i];
+            if (!msg) continue;
             if (msg.role === 'user' || msg.role === 'assistant') {
                 return i;
             }
@@ -9788,7 +9860,6 @@
         }
 
         let injected = false;
-        const startChatRegex = /\[Start a new chat\]/i;
 
         const walkAndReplace = (node) => {
             if (!node) return;
@@ -9925,6 +9996,35 @@
         return null;
     }
 
+    function normalizeStandaloneMemoryPosition(bodyObj) {
+        const target = detectPrimaryRequestArray(bodyObj);
+        if (!target || !Array.isArray(target.array)) return { moved: 0, markerIndex: -1 };
+
+        const getNodeText = node => {
+            if (!node || typeof node !== 'object') return '';
+            if (typeof node.content === 'string') return node.content;
+            if (typeof node.mes === 'string') return node.mes;
+            if (Array.isArray(node.parts)) {
+                return node.parts.map(part => typeof part?.text === 'string' ? part.text : '').join('\n');
+            }
+            return '';
+        };
+        const isHotTableMessage = msg => msg?.isGaigaiData === true && /^SYSTEM\(热记忆-/.test(String(msg.name || ''));
+        const isColdVectorMessage = msg => msg?.isGaigaiVector === true && /^【系统检索到的历史记忆片段/.test(getNodeText(msg));
+
+        const memoryMessages = target.array.filter(msg => isHotTableMessage(msg) || isColdVectorMessage(msg));
+        if (memoryMessages.length === 0) return { moved: 0, markerIndex: -1 };
+
+        const remaining = target.array.filter(msg => !isHotTableMessage(msg) && !isColdVectorMessage(msg));
+        const markerIndex = remaining.findIndex(msg => getNodeText(msg).includes('[Start a new Chat]'));
+        if (markerIndex < 0) return { moved: 0, markerIndex: -1 };
+
+        memoryMessages.sort((left, right) => Number(isColdVectorMessage(left)) - Number(isColdVectorMessage(right)));
+        remaining.splice(markerIndex, 0, ...memoryMessages);
+        target.array.splice(0, target.array.length, ...remaining);
+        return { moved: memoryMessages.length, markerIndex };
+    }
+
     function injectVectorIntoRequestBody(bodyObj, vectorText) {
         const meta = createVectorInjectionMeta({
             contentLength: vectorText ? vectorText.length : 0
@@ -9960,7 +10060,6 @@
         }
 
         let injected = false;
-        const startChatRegex = /\[Start a new chat\]/i;
 
         const markMetaFromPath = (path, mode, merged) => {
             if (!meta.targetPath) {
@@ -10739,6 +10838,9 @@
                                         : '[Fetch Hijack-Modern] MEMORY variable body injection fallback applied');
                                 }
 
+                                normalizeStandaloneMemoryPosition(bodyObj);
+                                args[1].body = JSON.stringify(bodyObj);
+
                                 const requestChatAfterOpmt = Array.isArray(bodyObj.messages)
                                     ? bodyObj.messages
                                     : (Array.isArray(bodyObj.prompt)
@@ -10877,6 +10979,7 @@
                                                     const safeBodyEvent = { chat: safeBodyChat };
                                                     await opmt(safeBodyEvent);
                                                     bodyObjForOpmt[key] = safeBodyEvent.chat;
+                                                    normalizeStandaloneMemoryPosition(bodyObjForOpmt);
                                                     args[1].body = JSON.stringify(bodyObjForOpmt);
 
                                                     if (hasMemoryVars) {
@@ -10892,6 +10995,19 @@
                                             }
                                         } else {
                                             console.log('ℹ️ [Fetch Hijack] 请求体已包含 Gaigai 注入标记，跳过 opmt 兜底注入');
+                                        }
+                                    }
+
+                                    if (args[1] && typeof args[1].body === 'string') {
+                                        try {
+                                            const finalMemoryBody = JSON.parse(args[1].body);
+                                            const normalized = normalizeStandaloneMemoryPosition(finalMemoryBody);
+                                            if (normalized.moved > 0) {
+                                                args[1].body = JSON.stringify(finalMemoryBody);
+                                                console.log(`📍 [最终请求归位] 已将 ${normalized.moved} 条独立记忆移动到 [Start a new Chat] 前`);
+                                            }
+                                        } catch (e) {
+                                            console.warn('⚠️ [最终请求归位] 请求体解析失败，已保留原顺序:', e);
                                         }
                                     }
 
@@ -10953,6 +11069,7 @@
                                                 const { injected, meta } = injectVectorIntoRequestBody(bodyObj, vectorText);
 
                                                 if (injected) {
+                                                    normalizeStandaloneMemoryPosition(bodyObj);
                                                     // 更新请求体
                                                     args[1].body = JSON.stringify(bodyObj);
                                                     console.log('✅ [Fetch Hijack] 智能注入完成');
