@@ -25,7 +25,8 @@
 
 ## 注入与隔离
 
-- 热表格和冷向量召回默认都作为独立 system 消息插在 `[Start a new Chat]` 所在 system 消息之前。插件会在最终完整请求体中再次归位，避免提示词早期阶段注入后被随后加入的世界书挤到前面。`{{MEMORY_TABLE}}`、`{{MEMORY_TABLE_xxx}}` 与 `{{VECTOR_MEMORY}}` 显式变量仍优先；找不到分隔符时才使用深度或普通对话兜底位置。
+- 热表格按 gaigai 上游规则固定为独立 system 消息：显式 `{{MEMORY_TABLE_xxx}}`、`{{MEMORY_TABLE}}`、`{{MEMORY}}` 会拆分原消息并在锚点处插入；默认插在 `[Start a new Chat]` 所在 system 消息之前，无分隔符时放索引 0。单表锚点优先保留目标表，手机 `allowTable` 可显式允许或禁止表格注入。
+- 冷向量召回按 LEASE 既定要求保持独立消息；普通 `messages/prompt` 请求默认插在 `[Start a new Chat]` 前，显式 `{{VECTOR_MEMORY}}` 仍在原位置替换。Gemini `contents` 完全保留上游的 `user/parts` 与索引 0 兜底，不额外改写位置。
 - 调试面板显示最终插入索引、角色、热行数、冷召回数和实际请求消息。
 - 插件 ID 为 `lease_vector_memory`，存储使用全新 `lvm_` 命名空间，不自动读取旧插件数据。
 - 可通过“导入”显式迁移旧 LEASE Memory Context 导出文件：忽略总结表和旧绿色状态，先全部转白，再按当前 X 安全降冷。
@@ -45,7 +46,7 @@ npm run check
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 ```
 
-26 项自动测试覆盖稳定 ID、v2 往返、可见性、事务拒绝、十行主线 X=3、Embedding 失败回退、向量关闭回退、旧总结死代码不回流、向量 UI 入口和命名空间隔离。真实 SillyTavern 与真实 Embedding/Rerank API 仍需实机验收。
+39 项自动测试覆盖稳定 ID、v2 往返、可见性、事务拒绝、自动隐藏、上游式表格锚点拆分、手机表格权限、普通请求向量注入位置、Embedding 失败回退、向量关闭回退、旧总结死代码不回流、向量 UI 入口和命名空间隔离。真实 SillyTavern 与真实 Embedding/Rerank API 仍需实机验收。
 
 ## 安装与发布状态
 

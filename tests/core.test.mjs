@@ -660,10 +660,10 @@ test('自动隐藏实现存在并只隐藏保留范围之前的普通对话', as
 });
 
 test('热表格默认注入到 Start a new Chat system 之前', () => {
-  const getInjectionPositionSource = extractBlock(indexSource, 'function getInjectionPosition(');
+  const getDefaultTablePositionSource = extractBlock(indexSource, 'function getDefaultTablePosition(');
   const sandbox = {};
   vm.createContext(sandbox);
-  vm.runInContext(`globalThis.getInjectionPosition = ${getInjectionPositionSource}`, sandbox);
+  vm.runInContext(`globalThis.getDefaultTablePosition = ${getDefaultTablePositionSource}`, sandbox);
 
   const chat = [
     { role: 'system', content: 'preset' },
@@ -672,15 +672,14 @@ test('热表格默认注入到 Start a new Chat system 之前', () => {
     { role: 'assistant', content: 'old assistant' },
     { role: 'user', content: 'current user' }
   ];
-  assert.equal(sandbox.getInjectionPosition(0, chat), 1);
-  assert.equal(sandbox.getInjectionPosition(2, chat), 1);
-  assert.equal(sandbox.getInjectionPosition(0, chat.slice(0, 2)), 1);
-  assert.equal(sandbox.getInjectionPosition(0, [
+  assert.equal(sandbox.getDefaultTablePosition(chat), 1);
+  assert.equal(sandbox.getDefaultTablePosition(chat.slice(0, 2)), 1);
+  assert.equal(sandbox.getDefaultTablePosition([
     { role: 'user', parts: [{ text: 'preset' }] },
     { role: 'user', parts: [{ text: '[Start a new Chat]' }] },
     { role: 'user', parts: [{ text: 'current user' }] }
-  ]), 1);
-  assert.match(indexSource, /const position = getInjectionPosition\(C\.tableDepth, ev\.chat\)/);
+  ]), 0);
+  assert.match(indexSource, /const position = getDefaultTablePosition\(ev\.chat\)/);
 });
 
 test('热表格和冷向量默认都位于 Start a new Chat system 之前', () => {
@@ -714,32 +713,104 @@ test('热表格和冷向量默认都位于 Start a new Chat system 之前', () =
   assert.match(body.messages[2].content, /召回的冷记忆/);
   assert.match(body.messages[3].content, /\[Start a new Chat\]/);
 });
-
-test('最终请求会把世界书前的提前注入记忆重新归位到 Start a new Chat 前', () => {
-  const sandbox = {};
+function loadMemoryInjector({ tableInj = true, phoneSignal = null } = {}) {
+  const tables = [
+    {
+      n: '主线剧情',
+      r: [["主线"]],
+      txt: () => '主线热记忆',
+      _ensureMeta: () => ({ __lvm: { cold: false } })
+    },
+    {
+      n: '角色信息',
+      r: [["角色"]],
+      txt: () => '角色热记忆',
+      _ensureMeta: () => ({ __lvm: { cold: false } })
+    }
+  ];
+  const sandbox = {
+    window: { LeaseVectorMemory: {}, isSummarizing: false },
+    C: { masterSwitch: true, tableInj, tableDepth: 0 },
+    m: { all: () => tables },
+    extractPhoneSignal: () => phoneSignal,
+    console,
+    document: undefined,
+    CSS: undefined
+  };
   vm.createContext(sandbox);
+  const injectorStart = indexSource.indexOf('function injectMemoryContext(ev)');
+  const injectorEnd = indexSource.indexOf('\n    function getDefaultTablePosition', injectorStart);
+  assert.ok(injectorStart >= 0 && injectorEnd > injectorStart);
   vm.runInContext(`
-    ${extractBlock(indexSource, 'function detectPrimaryRequestArray(')}
-    ${extractBlock(indexSource, 'function normalizeStandaloneMemoryPosition(')}
-    globalThis.normalizeStandaloneMemoryPosition = normalizeStandaloneMemoryPosition;
+    ${extractBlock(indexSource, 'function getDefaultTablePosition(')}
+    ${indexSource.slice(injectorStart, injectorEnd).trim()}
+    globalThis.injectMemoryContext = injectMemoryContext;
+    globalThis.getDefaultTablePosition = getDefaultTablePosition;
   `, sandbox);
+  return sandbox;
+}
 
-  const body = {
-    messages: [
-      { role: 'system', content: '预设第一条' },
-      { role: 'system', name: 'SYSTEM(热记忆-主线剧情)', content: '热表', isGaigaiData: true },
-      { role: 'system', content: '冷向量', isGaigaiVector: true },
-      { role: 'system', content: '世界书内容' },
-      { role: 'system', content: '[Start a new Chat]' },
-      { role: 'user', content: '当前消息' }
+test('显式表格锚点按上游拆分为独立 system 消息', () => {
+  const sandbox = loadMemoryInjector();
+  const event = {
+    chat: [
+      { role: 'user', content: '锚点前{{MEMORY_TABLE_主线剧情}}锚点后' },
+      { role: 'system', content: '[Start a new Chat]' }
     ]
   };
-  body.messages[2].content = '【系统检索到的历史记忆片段】\n\n冷向量';
-  const result = sandbox.normalizeStandaloneMemoryPosition(body);
-  assert.equal(result.moved, 2);
-  assert.equal(body.messages[1].content, '世界书内容');
-  assert.equal(body.messages[2].isGaigaiData, true);
-  assert.equal(body.messages[3].isGaigaiVector, true);
-  assert.match(body.messages[4].content, /\[Start a new Chat\]/);
-  assert.ok((indexSource.match(/normalizeStandaloneMemoryPosition\(/g) || []).length >= 5);
+  sandbox.injectMemoryContext(event);
+
+  assert.equal(event.chat[0].role, 'user');
+  assert.equal(event.chat[0].content, '锚点前');
+  assert.equal(event.chat[1].role, 'system');
+  assert.equal(event.chat[1].name, 'SYSTEM(热记忆-主线剧情)');
+  assert.match(event.chat[1].content, /主线热记忆/);
+  assert.equal(event.chat[2].role, 'user');
+  assert.equal(event.chat[2].content, '锚点后');
+  assert.equal(event.chat[3].role, 'system');
+  assert.equal(event.chat[3].name, 'SYSTEM(热记忆-角色信息)');
+  assert.match(event.chat[4].content, /\[Start a new Chat\]/);
+  assert.doesNotMatch(indexSource, /function getRoleByPosition\(/);
+});
+
+test('手机 allowTable 按上游覆盖全局表格开关', () => {
+  const denied = loadMemoryInjector({ tableInj: true, phoneSignal: { allowTable: false, appName: '测试手机' } });
+  const deniedEvent = { chat: [{ role: 'user', content: '{{MEMORY_TABLE}}' }, { role: 'system', content: '[Start a new Chat]' }] };
+  denied.injectMemoryContext(deniedEvent);
+  assert.equal(deniedEvent.chat.some(message => message.isGaigaiData === true), false);
+
+  const allowed = loadMemoryInjector({ tableInj: false, phoneSignal: { allowTable: true, appName: '测试手机' } });
+  const allowedEvent = { chat: [{ role: 'system', content: '[Start a new Chat]' }] };
+  allowed.injectMemoryContext(allowedEvent);
+  assert.equal(allowedEvent.chat[0].role, 'system');
+  assert.equal(allowedEvent.chat[0].isGaigaiData, true);
+  assert.match(allowedEvent.chat[2].content, /\[Start a new Chat\]/);
+});
+
+test('单表锚点按上游优先于更早出现的通用表格锚点', () => {
+  const sandbox = loadMemoryInjector();
+  const event = {
+    chat: [
+      { role: 'system', content: '{{MEMORY_TABLE}}' },
+      { role: 'system', content: '{{MEMORY_TABLE_角色信息}}' },
+      { role: 'system', content: '[Start a new Chat]' }
+    ]
+  };
+  sandbox.injectMemoryContext(event);
+  assert.equal(event.chat[0].name, 'SYSTEM(热记忆-主线剧情)');
+  assert.equal(event.chat[1].name, 'SYSTEM(热记忆-角色信息)');
+  assert.match(event.chat[2].content, /\[Start a new Chat\]/);
+});
+
+test('表格默认位置完全采用上游 Start 分隔符前与索引零兜底', () => {
+  const sandbox = loadMemoryInjector();
+  assert.equal(sandbox.getDefaultTablePosition([
+    { role: 'system', content: '预设' },
+    { role: 'system', content: '[Start a new Chat]' },
+    { role: 'user', content: '消息' }
+  ]), 1);
+  assert.equal(sandbox.getDefaultTablePosition([
+    { role: 'system', content: '预设' },
+    { role: 'user', content: '消息' }
+  ]), 0);
 });

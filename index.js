@@ -3093,27 +3093,127 @@
     function injectMemoryContext(ev) {
         if (!C.masterSwitch || window.isSummarizing || !ev || !Array.isArray(ev.chat)) return;
 
+        const phoneSignal = extractPhoneSignal(ev.chat);
+        const phoneAllowsTable = !!phoneSignal && phoneSignal.allowTable === true;
         const getText = msg => {
-            if (typeof msg?.content === 'string') return msg.content;
-            if (typeof msg?.mes === 'string') return msg.mes;
-            if (Array.isArray(msg?.parts)) return msg.parts.find(part => typeof part?.text === 'string')?.text || '';
+            if (!msg || typeof msg !== 'object') return '';
+            if (typeof msg.content === 'string') return msg.content;
+            if (typeof msg.mes === 'string') return msg.mes;
+            if (Array.isArray(msg.parts)) return msg.parts.find(part => typeof part?.text === 'string')?.text || '';
+            if (Array.isArray(msg.content)) return msg.content.find(part => typeof part?.text === 'string')?.text || '';
             return '';
         };
         const setText = (msg, text) => {
-            if (typeof msg?.content === 'string') msg.content = text;
-            else if (typeof msg?.mes === 'string') msg.mes = text;
-            else if (Array.isArray(msg?.parts)) {
-                const part = msg.parts.find(item => typeof item?.text === 'string');
-                if (part) part.text = text;
+            if (!msg || typeof msg !== 'object') return;
+            let written = false;
+            if (typeof msg.content === 'string') {
+                msg.content = text;
+                written = true;
             }
+            if (typeof msg.mes === 'string') {
+                msg.mes = text;
+                written = true;
+            }
+            if (Array.isArray(msg.parts)) {
+                const index = msg.parts.findIndex(item => typeof item?.text === 'string');
+                if (index >= 0) msg.parts[index] = Object.assign({}, msg.parts[index], { text });
+                else if (msg.parts.length > 0) msg.parts[0] = Object.assign({}, msg.parts[0], { text });
+                else msg.parts.push({ text });
+                written = true;
+            }
+            if (Array.isArray(msg.content)) {
+                const index = msg.content.findIndex(item => typeof item?.text === 'string');
+                if (index >= 0) {
+                    msg.content[index] = Object.assign({}, msg.content[index], { text });
+                    written = true;
+                }
+            }
+            if (!written) msg.content = text;
         };
+        const cloneSplitMessage = (originalMsg, text) => {
+            const cloned = Object.assign({}, originalMsg);
+            if (Array.isArray(originalMsg?.parts)) cloned.parts = originalMsg.parts.map(part => Object.assign({}, part));
+            if (Array.isArray(originalMsg?.content)) cloned.content = originalMsg.content.map(part => Object.assign({}, part));
+            setText(cloned, text);
+            return cloned;
+        };
+        const hasAnyMemoryVar = text => /\{\{MEMORY(?:_SUMMARY|_TABLE|_PROMPT)?\}\}|\{\{MEMORY_TABLE_.+?\}\}/i.test(String(text || ''));
+        const stripAllMemoryVars = text => String(text || '')
+            .replace(/\{\{MEMORY_TABLE_.+?\}\}/gi, '')
+            .replace(/\{\{MEMORY(?:_SUMMARY|_TABLE|_PROMPT)?\}\}/gi, '');
+        const normalizeAnchorText = text => String(text || '').replace(/\s+/g, ' ').trim();
+        const worldInfoAnchorEntries = (() => {
+            const collected = [];
+            try {
+                const worldInfoRoot = window.world_info;
+                if (!worldInfoRoot || typeof worldInfoRoot !== 'object') return collected;
+                const books = Array.isArray(worldInfoRoot) ? worldInfoRoot : Object.values(worldInfoRoot);
+                books.forEach(book => {
+                    if (!book || typeof book !== 'object' || !book.entries || typeof book.entries !== 'object') return;
+                    Object.values(book.entries).forEach(entry => {
+                        if (!entry || typeof entry !== 'object') return;
+                        const rawContent = String(entry.content || '');
+                        if (!hasAnyMemoryVar(rawContent)) return;
+                        collected.push({
+                            enabled: entry.enabled !== false && entry.disable !== true && entry.active !== false,
+                            normalizedContent: normalizeAnchorText(rawContent)
+                        });
+                    });
+                });
+            } catch (error) {
+                console.warn('⚠️ [锚点检测] 读取 world_info 状态失败:', error);
+            }
+            return collected;
+        })();
+        const worldInfoEntryMatchesMessage = (entryText, messageText) => {
+            if (!entryText || !messageText) return false;
+            if (messageText.includes(entryText) || entryText.includes(messageText)) return true;
+            const entrySkeleton = entryText
+                .replace(/\{\{memory_table_.+?\}\}/gi, '')
+                .replace(/\{\{memory(?:_summary|_table|_prompt)?\}\}/gi, '')
+                .trim();
+            return entrySkeleton.length >= 10 && messageText.includes(entrySkeleton);
+        };
+        const getPromptToggleStateByIdentifier = identifier => {
+            if (!identifier || typeof document === 'undefined') return null;
+            const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+                ? CSS.escape(String(identifier))
+                : String(identifier).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const selectors = [
+                `[data-identifier="${escaped}"] .prompt-manager-toggle-action`,
+                `[data-id="${escaped}"] .prompt-manager-toggle-action`,
+                `[data-prompt-id="${escaped}"] .prompt-manager-toggle-action`
+            ];
+            for (const selector of selectors) {
+                const node = document.querySelector(selector);
+                if (!node) continue;
+                if (node.classList.contains('fa-toggle-off')) return false;
+                if (node.classList.contains('fa-toggle-on')) return true;
+            }
+            return null;
+        };
+        const isAnchorMessageAllowed = (msg, text) => {
+            if (!hasAnyMemoryVar(text)) return true;
+            if (msg?.identifier && getPromptToggleStateByIdentifier(msg.identifier) === false) return false;
+            if (worldInfoAnchorEntries.length === 0) return true;
+            const normalizedMessage = normalizeAnchorText(text);
+            let hitEnabled = false;
+            let hitDisabled = false;
+            worldInfoAnchorEntries.forEach(entry => {
+                if (!worldInfoEntryMatchesMessage(entry.normalizedContent, normalizedMessage)) return;
+                if (entry.enabled) hitEnabled = true;
+                else hitDisabled = true;
+            });
+            return !(hitDisabled && !hitEnabled);
+        };
+        const normalizeTableName = name => String(name || '').normalize('NFKC').replace(/\s+/g, '').trim().toLowerCase();
 
-        const tableMessages = [];
+        let tableMessages = [];
         m.all().forEach((sheet, tableIndex) => {
             const sheetText = sheet.txt(tableIndex, 'story');
             if (!sheetText) return;
             tableMessages.push({
-                role: getRoleByPosition(C.tablePos),
+                role: 'system',
                 name: `SYSTEM(热记忆-${sheet.n})`,
                 content: `【当前热记忆 - ${sheet.n}】\n${sheetText}`,
                 tableName: sheet.n,
@@ -3121,57 +3221,106 @@
             });
         });
 
-        const tableText = tableMessages.map(item => item.content).join('\n\n');
-        const tableTextByName = new Map(
-            tableMessages.map(item => [String(item.tableName || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase(), item.content])
-        );
-        const anchoredTableNames = new Set();
-        let usedAllTablesAnchor = false;
+        if (phoneSignal?.allowTable === false) tableMessages = [];
+        for (let index = 0; index < ev.chat.length; index++) {
+            let messageText = getText(ev.chat[index]);
+            if (!messageText) continue;
+            if (hasAnyMemoryVar(messageText) && !isAnchorMessageAllowed(ev.chat[index], messageText)) {
+                const cleaned = stripAllMemoryVars(messageText);
+                setText(ev.chat[index], cleaned);
+                if (!cleaned.trim()) ev.chat[index]._toDelete = true;
+                continue;
+            }
 
-        ev.chat.forEach(msg => {
-            const original = getText(msg);
-            if (!original) return;
-            let next = original;
+            const specificTableRegex = /\{\{MEMORY_TABLE_(.+?)\}\}/gi;
+            let match;
+            let split = false;
+            while ((match = specificTableRegex.exec(messageText)) !== null) {
+                const tableIndex = tableMessages.findIndex(message => normalizeTableName(message.tableName) === normalizeTableName(match[1]));
+                if (tableIndex < 0) {
+                    messageText = messageText.replace(match[0], '');
+                    setText(ev.chat[index], messageText);
+                    specificTableRegex.lastIndex = 0;
+                    continue;
+                }
 
-            if (next.includes('{{MEMORY_SUMMARY}}')) {
-                next = next.split('{{MEMORY_SUMMARY}}').join('');
+                const tableMessage = tableMessages.splice(tableIndex, 1)[0];
+                const variableIndex = messageText.indexOf(match[0]);
+                const before = messageText.slice(0, variableIndex).trim();
+                const after = messageText.slice(variableIndex + match[0].length).trim();
+                const originalMessage = ev.chat[index];
+                const replacement = [];
+                if (before) replacement.push(cloneSplitMessage(originalMessage, before));
+                if (originalMessage.gaigaiPhoneSignal) tableMessage.gaigaiPhoneSignal = originalMessage.gaigaiPhoneSignal;
+                replacement.push(tableMessage);
+                if (after) replacement.push(cloneSplitMessage(originalMessage, after));
+                ev.chat.splice(index, 1, ...replacement);
+                split = true;
+                break;
             }
-            if (next.includes('{{MEMORY_TABLE}}')) {
-                next = next.split('{{MEMORY_TABLE}}').join(tableText);
-                usedAllTablesAnchor = true;
-            }
-            next = next.replace(/\{\{MEMORY_TABLE_(.+?)\}\}/gi, (_full, rawName) => {
-                const key = String(rawName || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-                anchoredTableNames.add(key);
-                return tableTextByName.get(key) || '';
-            });
-            if (next.includes('{{MEMORY}}')) {
-                const combined = C.tableInj ? tableText : '';
-                next = next.split('{{MEMORY}}').join(combined);
-                usedAllTablesAnchor = true;
-            }
-            // 日常生成不恢复实时填表，因此提示词变量只负责清理。
-            next = next.split('{{MEMORY_PROMPT}}').join('');
-            if (next !== original) {
-                setText(msg, next);
-                msg.isGaigaiData = true;
-            }
-        });
-
-        const defaultMessages = [];
-        if (C.tableInj && !usedAllTablesAnchor) {
-            defaultMessages.push(...tableMessages.filter(item => {
-                const key = String(item.tableName || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-                return !anchoredTableNames.has(key);
-            }));
+            if (split) index--;
         }
 
+        const hasAllowedTableAnchor = ev.chat.some(message => {
+            const text = getText(message);
+            return text.includes('{{MEMORY_TABLE}}') && isAnchorMessageAllowed(message, text);
+        });
+        let replacedTable = false;
+
+        for (let index = 0; index < ev.chat.length; index++) {
+            let messageText = getText(ev.chat[index]);
+            if (!messageText) continue;
+            if (hasAnyMemoryVar(messageText) && !isAnchorMessageAllowed(ev.chat[index], messageText)) {
+                const cleaned = stripAllMemoryVars(messageText);
+                setText(ev.chat[index], cleaned);
+                if (!cleaned.trim()) ev.chat[index]._toDelete = true;
+                continue;
+            }
+
+            messageText = messageText
+                .replace(/\{\{MEMORY_SUMMARY\}\}/gi, '')
+                .replace(/\{\{MEMORY_PROMPT\}\}/gi, '');
+            setText(ev.chat[index], messageText);
+
+            let variable = null;
+            if (/\{\{MEMORY_TABLE\}\}/i.test(messageText)) variable = '{{MEMORY_TABLE}}';
+            else if (/\{\{MEMORY\}\}/i.test(messageText)) variable = '{{MEMORY}}';
+            if (!variable) continue;
+
+            const shouldInject = variable === '{{MEMORY_TABLE}}'
+                ? !replacedTable && tableMessages.length > 0
+                : !replacedTable && !hasAllowedTableAnchor && (C.tableInj || phoneAllowsTable) && tableMessages.length > 0;
+            const variableRegex = variable === '{{MEMORY_TABLE}}' ? /\{\{MEMORY_TABLE\}\}/i : /\{\{MEMORY\}\}/i;
+            if (!shouldInject) {
+                setText(ev.chat[index], messageText.replace(variableRegex, ''));
+                continue;
+            }
+
+            const match = variableRegex.exec(messageText);
+            const before = messageText.slice(0, match.index).trim();
+            const after = messageText.slice(match.index + match[0].length).trim();
+            const originalMessage = ev.chat[index];
+            const replacement = [];
+            if (before) replacement.push(cloneSplitMessage(originalMessage, before));
+            if (originalMessage.gaigaiPhoneSignal) tableMessages.forEach(message => { message.gaigaiPhoneSignal = originalMessage.gaigaiPhoneSignal; });
+            replacement.push(...tableMessages);
+            if (after) replacement.push(cloneSplitMessage(originalMessage, after));
+            ev.chat.splice(index, 1, ...replacement);
+            replacedTable = true;
+            index--;
+        }
+
+        if (ev.chat.some(message => message._toDelete)) {
+            ev.chat.splice(0, ev.chat.length, ...ev.chat.filter(message => !message._toDelete));
+        }
+        const defaultMessages = (C.tableInj || phoneAllowsTable) && !replacedTable ? tableMessages : [];
+
         if (defaultMessages.length > 0) {
-            const position = getInjectionPosition(C.tableDepth, ev.chat);
+            const position = getDefaultTablePosition(ev.chat);
             ev.chat.splice(position, 0, ...defaultMessages);
             window.LeaseVectorMemory.lastInjectionDebug = {
                 index: position,
-                role: getRoleByPosition(C.tablePos),
+                role: 'system',
                 hotRows: m.all().reduce((count, sheet) => count + sheet.r.filter(row => !sheet._ensureMeta(row).__lvm.cold).length, 0),
                 coldRecallCount: window.LeaseVectorMemory.lastColdRecallCount || 0,
                 text: defaultMessages.map(item => item.content).join('\n\n')
@@ -3179,9 +3328,15 @@
         }
     }
 
-    function getRoleByPosition(pos) {
-        if (pos === 'system') return 'system';
-        return 'user';
+    function getDefaultTablePosition(chat) {
+        if (!Array.isArray(chat) || chat.length === 0) return 0;
+        for (let index = 0; index < chat.length; index++) {
+            const message = chat[index];
+            if (message?.role === 'system' && typeof message.content === 'string' && message.content.includes('[Start a new Chat]')) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     function getInjectionPosition(depth, chat) {
@@ -9996,35 +10151,6 @@
         return null;
     }
 
-    function normalizeStandaloneMemoryPosition(bodyObj) {
-        const target = detectPrimaryRequestArray(bodyObj);
-        if (!target || !Array.isArray(target.array)) return { moved: 0, markerIndex: -1 };
-
-        const getNodeText = node => {
-            if (!node || typeof node !== 'object') return '';
-            if (typeof node.content === 'string') return node.content;
-            if (typeof node.mes === 'string') return node.mes;
-            if (Array.isArray(node.parts)) {
-                return node.parts.map(part => typeof part?.text === 'string' ? part.text : '').join('\n');
-            }
-            return '';
-        };
-        const isHotTableMessage = msg => msg?.isGaigaiData === true && /^SYSTEM\(热记忆-/.test(String(msg.name || ''));
-        const isColdVectorMessage = msg => msg?.isGaigaiVector === true && /^【系统检索到的历史记忆片段/.test(getNodeText(msg));
-
-        const memoryMessages = target.array.filter(msg => isHotTableMessage(msg) || isColdVectorMessage(msg));
-        if (memoryMessages.length === 0) return { moved: 0, markerIndex: -1 };
-
-        const remaining = target.array.filter(msg => !isHotTableMessage(msg) && !isColdVectorMessage(msg));
-        const markerIndex = remaining.findIndex(msg => getNodeText(msg).includes('[Start a new Chat]'));
-        if (markerIndex < 0) return { moved: 0, markerIndex: -1 };
-
-        memoryMessages.sort((left, right) => Number(isColdVectorMessage(left)) - Number(isColdVectorMessage(right)));
-        remaining.splice(markerIndex, 0, ...memoryMessages);
-        target.array.splice(0, target.array.length, ...remaining);
-        return { moved: memoryMessages.length, markerIndex };
-    }
-
     function injectVectorIntoRequestBody(bodyObj, vectorText) {
         const meta = createVectorInjectionMeta({
             contentLength: vectorText ? vectorText.length : 0
@@ -10838,9 +10964,6 @@
                                         : '[Fetch Hijack-Modern] MEMORY variable body injection fallback applied');
                                 }
 
-                                normalizeStandaloneMemoryPosition(bodyObj);
-                                args[1].body = JSON.stringify(bodyObj);
-
                                 const requestChatAfterOpmt = Array.isArray(bodyObj.messages)
                                     ? bodyObj.messages
                                     : (Array.isArray(bodyObj.prompt)
@@ -10979,7 +11102,6 @@
                                                     const safeBodyEvent = { chat: safeBodyChat };
                                                     await opmt(safeBodyEvent);
                                                     bodyObjForOpmt[key] = safeBodyEvent.chat;
-                                                    normalizeStandaloneMemoryPosition(bodyObjForOpmt);
                                                     args[1].body = JSON.stringify(bodyObjForOpmt);
 
                                                     if (hasMemoryVars) {
@@ -10995,19 +11117,6 @@
                                             }
                                         } else {
                                             console.log('ℹ️ [Fetch Hijack] 请求体已包含 Gaigai 注入标记，跳过 opmt 兜底注入');
-                                        }
-                                    }
-
-                                    if (args[1] && typeof args[1].body === 'string') {
-                                        try {
-                                            const finalMemoryBody = JSON.parse(args[1].body);
-                                            const normalized = normalizeStandaloneMemoryPosition(finalMemoryBody);
-                                            if (normalized.moved > 0) {
-                                                args[1].body = JSON.stringify(finalMemoryBody);
-                                                console.log(`📍 [最终请求归位] 已将 ${normalized.moved} 条独立记忆移动到 [Start a new Chat] 前`);
-                                            }
-                                        } catch (e) {
-                                            console.warn('⚠️ [最终请求归位] 请求体解析失败，已保留原顺序:', e);
                                         }
                                     }
 
@@ -11069,7 +11178,6 @@
                                                 const { injected, meta } = injectVectorIntoRequestBody(bodyObj, vectorText);
 
                                                 if (injected) {
-                                                    normalizeStandaloneMemoryPosition(bodyObj);
                                                     // 更新请求体
                                                     args[1].body = JSON.stringify(bodyObj);
                                                     console.log('✅ [Fetch Hijack] 智能注入完成');
