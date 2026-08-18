@@ -1,5 +1,14 @@
 # 更改日志
 
+## 2026-08-19 修复自动隐藏与冷热记忆注入位置 v4.3.2
+
+- **用户目标**：修复 LEASE Vector Memory 的“保留最近 N 层”自动隐藏完全失效，以及热记忆表格、冷向量召回都被错误作为独立消息插到索引 1 的问题；以当前 `ST-Memory-Context-main` 和 gaigai 固定上游快照为对照恢复正确语义。
+- **主要修改**：确认目标项目在删除 `summary_manager.js` 时误删了 `applyContextLimitHiding`、`silentHideMessages` 和隐藏索引检测，但 UI、消息完成、聊天切换、立即执行及发送前调用仍然保留，导致所有入口实际无实现可调。将三段实现迁回 `index.js` 并改用 `LeaseVectorMemory` 命名空间：只统计普通对话，排除 system、插件注入和手机消息，隐藏保留范围之前且尚未隐藏的楼层，更新 DOM 后调用 `saveChat()` 持久化。注入定位按用户最终指定统一：热表格和冷向量默认都作为独立 system 消息插在 `[Start a new Chat]` system 之前。进一步确认旧故障并非单纯位于分隔符后，而是早期提示词数组尚未加入世界书/分隔符时先按索引 1 注入，后续标记又让最终请求跳过重定位；因此新增最终请求体归位，识别插件独立热表/冷向量消息并在完整 messages/prompt/contents 中移动到分隔符前，显式变量合并消息不移动。版本升至 4.3.2。
+- **修改的文件**：`index.js`、`tests/core.test.mjs`、`manifest.json`、`package.json`、`README.md`、`PROJECT_CONTEXT.md`、`CHANGELOG.md`。
+- **验证**：`npm test` 通过 36/36 项，新增覆盖旧楼层筛选、隐藏持久化、OpenAI/Gemini 分隔符定位，以及已提前插入在世界书前的热表/冷向量在最终请求体中重新归位到 `[Start a new Chat]` system 前；`npm run check` 通过 6 个核心 JavaScript 语法检查；manifest/package 版本一致性检查结果为 `lease_vector_memory 4.3.2`；`git diff --check` 无空白错误，仅提示工作区 LF→CRLF 转换。
+- **未完成事项**：尚未在真实 SillyTavern 请求探针中观察 4.3.2 的最终 messages/contents，也未提交、推送或部署到扩展运行目录。
+- **已知风险与后续建议**：显式 `{{MEMORY_TABLE}}`、`{{MEMORY_TABLE_xxx}}` 和 `{{VECTOR_MEMORY}}` 仍优先于默认位置；没有 `[Start a new Chat]` 的特殊预设会使用普通对话兜底位置。部署后应在调试面板确认热表和向量消息均位于分隔符 system 前，并检查第 N+1 条普通对话生成后旧楼层出现幽灵隐藏标记。
+
 ## 2026-08-17 修复角色信息空主键与错误 R 连坐 v4.3.1
 
 - **用户目标**：检查连续性记录中反复出现的“事务已拒绝：表2 R2不存在”，核对角色信息填表失败、默认提示词和上游行为，解释为什么界面只有 R1 却被判定 R2 不存在，并直接修复根因。

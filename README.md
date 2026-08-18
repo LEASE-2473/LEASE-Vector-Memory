@@ -25,7 +25,7 @@
 
 ## 注入与隔离
 
-- 默认注入点是预设/System/世界书之后、历史聊天之前；显式设置深度时覆盖默认锚点。
+- 热表格和冷向量召回默认都作为独立 system 消息插在 `[Start a new Chat]` 所在 system 消息之前。插件会在最终完整请求体中再次归位，避免提示词早期阶段注入后被随后加入的世界书挤到前面。`{{MEMORY_TABLE}}`、`{{MEMORY_TABLE_xxx}}` 与 `{{VECTOR_MEMORY}}` 显式变量仍优先；找不到分隔符时才使用深度或普通对话兜底位置。
 - 调试面板显示最终插入索引、角色、热行数、冷召回数和实际请求消息。
 - 插件 ID 为 `lease_vector_memory`，存储使用全新 `lvm_` 命名空间，不自动读取旧插件数据。
 - 可通过“导入”显式迁移旧 LEASE Memory Context 导出文件：忽略总结表和旧绿色状态，先全部转白，再按当前 X 安全降冷。
@@ -59,6 +59,6 @@ https://github.com/LEASE-2473/LEASE-Vector-Memory
 
 这是与旧 `ST-Memory-Context` 完全独立的新扩展。首次测试前请停用旧填表插件，避免两个插件同时拦截请求。
 
-- 插件版本：4.3.1
+- 插件版本：4.3.2
 - 维护者：LEASE
 - 许可证：MIT，见 [LICENSE](LICENSE)

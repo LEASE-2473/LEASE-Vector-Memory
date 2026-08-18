@@ -620,3 +620,126 @@ test('动态路径定位可识别 SillyTavern 克隆出的 LEASE-Vector-Memory �
   vm.runInContext(`globalThis.getExtensionPath = ${getPathSource}`, sandbox);
   assert.equal(sandbox.getExtensionPath(), '/scripts/extensions/third-party/LEASE-Vector-Memory');
 });
+
+test('自动隐藏实现存在并只隐藏保留范围之前的普通对话', async () => {
+  const sandbox = {
+    window: { LeaseVectorMemory: {} },
+    C: { masterSwitch: true, contextLimit: true, contextLimitCount: 2 },
+    console,
+    $: () => ({ length: 0, attr() {} })
+  };
+  let saveCount = 0;
+  const ctx = {
+    chat: [
+      { role: 'system', content: 'preset' },
+      { role: 'user', content: 'u1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'system', content: 'injected', isGaigaiData: true },
+      { role: 'user', content: 'u2' },
+      { role: 'assistant', content: 'a2' }
+    ],
+    async saveChat() { saveCount++; }
+  };
+  sandbox.m = { ctx: () => ctx };
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    ${extractBlock(indexSource, 'function getHiddenMessageIndices(')}
+    ${extractBlock(indexSource, 'async function silentHideMessages(')}
+    ${extractBlock(indexSource, 'async function applyContextLimitHiding(')}
+    globalThis.applyContextLimitHiding = applyContextLimitHiding;
+  `, sandbox);
+
+  const result = await sandbox.applyContextLimitHiding();
+  assert.equal(result.hidden, 2);
+  assert.equal(ctx.chat[1].is_system, true);
+  assert.equal(ctx.chat[2].is_system, true);
+  assert.equal(ctx.chat[4].is_system, undefined);
+  assert.equal(ctx.chat[5].is_system, undefined);
+  assert.equal(saveCount, 1);
+  assert.match(indexSource, /window\.LeaseVectorMemory\.applyContextLimitHiding = applyContextLimitHiding/);
+});
+
+test('热表格默认注入到 Start a new Chat system 之前', () => {
+  const getInjectionPositionSource = extractBlock(indexSource, 'function getInjectionPosition(');
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(`globalThis.getInjectionPosition = ${getInjectionPositionSource}`, sandbox);
+
+  const chat = [
+    { role: 'system', content: 'preset' },
+    { role: 'system', content: '[Start a new Chat]' },
+    { role: 'user', content: 'old user' },
+    { role: 'assistant', content: 'old assistant' },
+    { role: 'user', content: 'current user' }
+  ];
+  assert.equal(sandbox.getInjectionPosition(0, chat), 1);
+  assert.equal(sandbox.getInjectionPosition(2, chat), 1);
+  assert.equal(sandbox.getInjectionPosition(0, chat.slice(0, 2)), 1);
+  assert.equal(sandbox.getInjectionPosition(0, [
+    { role: 'user', parts: [{ text: 'preset' }] },
+    { role: 'user', parts: [{ text: '[Start a new Chat]' }] },
+    { role: 'user', parts: [{ text: 'current user' }] }
+  ]), 1);
+  assert.match(indexSource, /const position = getInjectionPosition\(C\.tableDepth, ev\.chat\)/);
+});
+
+test('热表格和冷向量默认都位于 Start a new Chat system 之前', () => {
+  const sandbox = { console, C: { tableDepth: 0 } };
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    ${extractBlock(indexSource, 'function getInjectionPosition(')}
+    ${extractBlock(indexSource, 'function createVectorInjectionMeta(')}
+    ${extractBlock(indexSource, 'function requestBodyContainsVectorMarker(')}
+    ${extractBlock(indexSource, 'function requestBodyContainsVectorText(')}
+    ${extractBlock(indexSource, 'function detectPrimaryRequestArray(')}
+    ${extractBlock(indexSource, 'function injectVectorIntoRequestBody(')}
+    globalThis.injectVectorIntoRequestBody = injectVectorIntoRequestBody;
+  `, sandbox);
+
+  const body = {
+    messages: [
+      { role: 'system', content: 'preset' },
+      { role: 'system', content: '【当前热记忆】', isGaigaiData: true },
+      { role: 'system', content: '[Start a new Chat]' },
+      { role: 'user', content: 'current user' }
+    ]
+  };
+  const result = sandbox.injectVectorIntoRequestBody(body, '召回的冷记忆');
+  assert.equal(result.injected, true);
+  assert.equal(result.meta.mode, 'array_insert');
+  assert.equal(result.meta.merged, false);
+  assert.equal(body.messages.length, 5);
+  assert.equal(body.messages[1].isGaigaiData, true);
+  assert.equal(body.messages[2].isGaigaiVector, true);
+  assert.match(body.messages[2].content, /召回的冷记忆/);
+  assert.match(body.messages[3].content, /\[Start a new Chat\]/);
+});
+
+test('最终请求会把世界书前的提前注入记忆重新归位到 Start a new Chat 前', () => {
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    ${extractBlock(indexSource, 'function detectPrimaryRequestArray(')}
+    ${extractBlock(indexSource, 'function normalizeStandaloneMemoryPosition(')}
+    globalThis.normalizeStandaloneMemoryPosition = normalizeStandaloneMemoryPosition;
+  `, sandbox);
+
+  const body = {
+    messages: [
+      { role: 'system', content: '预设第一条' },
+      { role: 'system', name: 'SYSTEM(热记忆-主线剧情)', content: '热表', isGaigaiData: true },
+      { role: 'system', content: '冷向量', isGaigaiVector: true },
+      { role: 'system', content: '世界书内容' },
+      { role: 'system', content: '[Start a new Chat]' },
+      { role: 'user', content: '当前消息' }
+    ]
+  };
+  body.messages[2].content = '【系统检索到的历史记忆片段】\n\n冷向量';
+  const result = sandbox.normalizeStandaloneMemoryPosition(body);
+  assert.equal(result.moved, 2);
+  assert.equal(body.messages[1].content, '世界书内容');
+  assert.equal(body.messages[2].isGaigaiData, true);
+  assert.equal(body.messages[3].isGaigaiVector, true);
+  assert.match(body.messages[4].content, /\[Start a new Chat\]/);
+  assert.ok((indexSource.match(/normalizeStandaloneMemoryPosition\(/g) || []).length >= 5);
+});
